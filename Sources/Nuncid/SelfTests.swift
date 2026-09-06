@@ -16,7 +16,45 @@ private final class SelfTestAsyncResult: @unchecked Sendable {
 }
 
 @MainActor enum SelfTests {
+    private static func verifyMenuBarIconPresentation() {
+        let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
+        defer { NSStatusBar.system.removeStatusItem(item) }
+        guard let button = item.button else { fatalError("Missing test status button") }
+        // Exercise the real status-button presenter across all state transitions.
+        // Pixel contrast is owned by AppKit; these checks guard its prerequisites.
+        for appearanceName in [NSAppearance.Name.aqua, .darkAqua, .accessibilityHighContrastAqua,
+                               .accessibilityHighContrastDarkAqua] {
+            let appearance = NSAppearance(named: appearanceName)!
+            button.appearance = appearance
+            for highlighted in [false, true] {
+                button.highlight(highlighted)
+                for mode in HoverActivationMode.allCases {
+                    for hover in [false, true] {
+                        for found in [false, true] {
+                            button.contentTintColor = .systemRed
+                            MenuBarIconPresentation.apply(to: button, mode: mode,
+                                                          hoverEnabled: hover, matchFound: found)
+                            guard button.image?.isTemplate == true,
+                                  button.contentTintColor == nil,
+                                  button.appearance === appearance,
+                                  button.isEnabled,
+                                  button.accessibilityLabel()?.hasPrefix("Nuncid,") == true else {
+                                fputs("self-test failed: native menu-bar template appearance\n", stderr); exit(1)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        button.appearance = nil
+        MenuBarIconPresentation.apply(to: button, mode: .pressToScan, hoverEnabled: false, matchFound: false)
+        guard button.appearance == nil, button.contentTintColor == nil else {
+            fputs("self-test failed: status icon inherits menu-bar appearance\n", stderr); exit(1)
+        }
+    }
+
     static func runAndExit() -> Never {
+        verifyMenuBarIconPresentation()
         let tokens = TokenParser.parse([
             "HAUSV-578 PAI-843 START-186 PHAROS-203 JANUS-455",
             "collision #130 bare 130 release 0.99.12",
@@ -165,7 +203,7 @@ private final class SelfTestAsyncResult: @unchecked Sendable {
             ReleaseIdentity(rawVersion: raw, scheme: .legacy)
         }
         func calendarIdentity(_ raw: String) -> ReleaseIdentity? {
-            ReleaseIdentity(rawVersion: raw, scheme: .calendar, sequence: raw == "26.09.06" ? 18 : 19)
+            ReleaseIdentity(rawVersion: raw, scheme: .calendar, sequence: ReleaseMigration.firstCalendarSequence + (raw == "26.09.06" ? 0 : 1))
         }
         guard legacyIdentity("1.2.0") != nil,
               calendarIdentity("26.09.06") != nil,
@@ -199,8 +237,9 @@ private final class SelfTestAsyncResult: @unchecked Sendable {
         func calendarMetadata(_ version: String, sequence: Int, scheme: String = "inspr-calendar-v1") -> String {
             "\nSome user-facing release notes.\n\n<!-- nuncid-release-metadata\nversion-scheme: \(scheme)\nversion: \(version)\nrelease-channel: stable\nrelease-sequence: \(sequence)\n-->\n"
         }
-        let calendarRelease = releasePayload(tag: "v26.09.06", body: calendarMetadata("26.09.06", sequence: 18))
-        let nextSameDayRelease = releasePayload(tag: "v26.09.06.10.30.00", body: calendarMetadata("26.09.06.10.30.00", sequence: 19))
+        let firstSequence = ReleaseMigration.firstCalendarSequence
+        let calendarRelease = releasePayload(tag: "v26.09.06", body: calendarMetadata("26.09.06", sequence: firstSequence))
+        let nextSameDayRelease = releasePayload(tag: "v26.09.06.10.30.00", body: calendarMetadata("26.09.06.10.30.00", sequence: firstSequence + 1))
         let mismatchedMetadata = releasePayload(
             tag: "v26.09.06",
             body: calendarMetadata("26.09.07", sequence: 17)
@@ -214,16 +253,17 @@ private final class SelfTestAsyncResult: @unchecked Sendable {
             body: "\n<!-- nuncid-release-metadata\nversion-scheme: inspr-calendar-v1\nversion: 26.09.06\nrelease-channel: stable\n-->\n"
         )
         let canonicalEndpoint = CanonicalReleasePolicy.endpoint
-        let metadata = calendarMetadata("26.09.06", sequence: 18)
+        let metadata = calendarMetadata("26.09.06", sequence: firstSequence)
+        let sequenceLine = "release-sequence: \(firstSequence)"
         let invalidBodies: [String?] = [
             nil, "", metadata.replacingOccurrences(of: "-->\n", with: ""),
             metadata + metadata,
             metadata.replacingOccurrences(of: "inspr-calendar-v1", with: "unknown"),
-            metadata.replacingOccurrences(of: "release-sequence: 18", with: "release-sequence: 17"),
-            metadata.replacingOccurrences(of: "release-sequence: 18", with: "release-sequence: 018"),
+            metadata.replacingOccurrences(of: sequenceLine, with: "release-sequence: \(firstSequence - 1)"),
+            metadata.replacingOccurrences(of: sequenceLine, with: "release-sequence: 0\(firstSequence)"),
             metadata.replacingOccurrences(of: "release-channel: stable", with: "release-channel: beta"),
             metadata.replacingOccurrences(of: "version: 26.09.06", with: "version: 26.09.07"),
-            metadata.replacingOccurrences(of: "release-sequence: 18", with: "version: 26.09.06\nrelease-sequence: 18")
+            metadata.replacingOccurrences(of: sequenceLine, with: "version: 26.09.06\n\(sequenceLine)")
         ]
         guard invalidBodies.allSatisfy({ body in
             CanonicalReleasePolicy.evaluate(installed: legacyIdentity("1.2.1"),
@@ -238,7 +278,7 @@ private final class SelfTestAsyncResult: @unchecked Sendable {
             == .available(version: "26.09.06", url: URL(string: "https://github.com/markus-barta/nuncid/releases/tag/v26.09.06")!),
         ReleaseIdentity(rawVersion: "26.09.06", scheme: .calendar) == nil,
         ReleaseIdentity(rawVersion: "1.2.1", scheme: .legacy, sequence: 16) == nil,
-        ReleaseIdentity(rawVersion: "26.09.06.10.30.00", scheme: .calendar, sequence: 18)!
+        ReleaseIdentity(rawVersion: "26.09.06.10.30.00", scheme: .calendar, sequence: firstSequence)!
             .isNewerThan(calendarIdentity("26.09.06")!) == nil else {
             fputs("self-test failed: bridge metadata, sequence, and update-path gates\n", stderr); exit(1)
         }
