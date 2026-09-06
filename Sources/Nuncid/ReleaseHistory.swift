@@ -21,6 +21,19 @@ struct ReleaseNote: Identifiable, Equatable {
 enum ReleaseHistory {
     static let notes: [ReleaseNote] = [
         ReleaseNote(
+            version: "1.2.3",
+            isoDate: "2026-09-06",
+            date: "6 September 2026",
+            theme: "Choose what to inspect",
+            headline: "Click Nuncid, then point at the ID you mean.",
+            intro: "The menu-bar icon now arms a single scan instead of reading nearby menu-bar numbers. Move to your target and let Nuncid inspect that spot.",
+            items: [
+                ReleaseNoteItem(label: "Point first, scan once", detail: "After clicking Nuncid, pause over an ID or click it. The menu bar itself never becomes the target."),
+                ReleaseNoteItem(label: "Easy to cancel", detail: "Click Nuncid again or open its right-click menu to cancel. An unused selection expires after 15 seconds."),
+                ReleaseNoteItem(label: "Shortcuts stay immediate", detail: "Press to Scan still scans at your current pointer when you use its shortcut. Your hover preferences and native menu-bar appearance stay unchanged.")
+            ]
+        ),
+        ReleaseNote(
             version: "1.2.2",
             isoDate: "2026-09-06",
             date: "6 September 2026",

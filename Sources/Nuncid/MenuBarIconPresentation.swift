@@ -17,18 +17,18 @@ import AppKit
         case .inactive:
             button.image = NuncidBrand.menuBarIcon
             let label = mode == .off
-                ? "Nuncid, scanning off. Left-click to scan once; right-click for Settings."
+                ? "Nuncid, scanning off. Left-click to choose an ID; right-click for Settings."
                 : (mode == .pressToScan
-                    ? "Nuncid, press to scan. Left-click to scan once; right-click for Settings."
-                    : "Nuncid, hover off. Left-click to scan once; right-click for Settings.")
+                    ? "Nuncid, press to scan. Left-click to choose an ID; right-click for Settings."
+                    : "Nuncid, hover off. Left-click to choose an ID; right-click for Settings.")
             button.setAccessibilityLabel(label)
         }
         button.image?.isTemplate = true
         // Reset on every transition too: no stale accent/green/label tint.
         button.contentTintColor = nil
-        button.toolTip = "Left-click to scan once · Right-click for Settings"
+        button.toolTip = "Left-click to choose an ID (again to cancel) · Right-click for Settings"
         button.setAccessibilityHelp(
-            "Left-click to scan once; right-click, Control-click, or use Open Nuncid menu for Settings and controls."
+            "Left-click, then point at or click an ID to scan once. Click Nuncid again to cancel; right-click for Settings."
         )
     }
 }

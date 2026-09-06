@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+## [1.2.3] - 2026-09-06
+
+- Choose the target after clicking Nuncid instead of scanning numbers in the menu bar.
+
 ## [1.2.2] - 2026-09-06
 
 - Let macOS render menu-bar icon contrast natively in light and dark appearances.
