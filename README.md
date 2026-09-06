@@ -208,6 +208,14 @@ swift scripts/render-marketing-shots.swift
 ./scripts/verify-release.sh
 ```
 
+Release PRs build the exact PR head and retain the verified ZIP, checksum, and
+manifest as the `nuncid-release-candidate` Actions artifact. **Promote those exact
+bytes**, rather than rebuilding after merge. Tag the manifest's source commit
+once it is merged; verify that its source tree matches the merged tree. Main
+branch CI runs the tests without producing a second candidate. A changed sealed
+candidate requires a new coordinate; do not rerun packaging under its old one.
+Local packaging above is for a reservation that has not already been sealed by CI.
+
 Every release uses a long UTC coordinate. Reservation rejects same-second,
 older, and already-used coordinates. Packaging never overwrites an archive or
 release-set manifest. A changed release artifact requires a later reservation;
@@ -232,7 +240,7 @@ NUNCID_NOTARY_PROFILE='nuncid-notary' \
 NUNCID_EXPECT_NOTARIZED=1 ./scripts/verify-release.sh
 ```
 
-Without those variables, packaging remains deliberately local/ad-hoc and verification says so. CI uses that credential-free path and never publishes an artifact. Complete Swift strict-concurrency checking is reserved for the Swift 6 migration; 1.0 remains in Swift 5 language mode and treats all warnings in its supported build mode as errors.
+Without those variables, packaging remains deliberately local/ad-hoc and verification says so. CI uses that credential-free path and retains verified candidates, but never publishes a GitHub Release. Complete Swift strict-concurrency checking is reserved for the Swift 6 migration; 1.0 remains in Swift 5 language mode and treats all warnings in its supported build mode as errors.
 
 ## Project map
 
