@@ -684,14 +684,16 @@ actor TicketEvidencePlanner {
         context: ResolutionContext,
         pinned: PinnedTicketContext?,
         foreground: ForegroundApplicationContext?,
-        history: ApplicationResolutionHistory
+        history: ApplicationResolutionHistory,
+        maximumCandidates: Int = ResolutionPlan.maximumCandidates
     ) -> ResolutionPlan {
         EvidenceCandidatePlanner.plan(
             input: input,
             context: context,
             pinned: pinned,
             foreground: foreground,
-            history: history
+            history: history,
+            maximumCandidates: maximumCandidates
         )
     }
 }

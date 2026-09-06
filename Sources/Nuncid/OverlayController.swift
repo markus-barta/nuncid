@@ -11,7 +11,7 @@ enum OverlayMetrics {
     }
 
     static func temporaryBodyHeight(totalHeight: CGFloat) -> CGFloat {
-        max(0, totalHeight - outerPadding * 2)
+        max(0, totalHeight - outerPadding * 2 - 28)
     }
 
     static func preferredHeight(
@@ -21,12 +21,12 @@ enum OverlayMetrics {
         width: CGFloat? = nil
     ) -> CGFloat {
         let resolvedWidth = max(360, width ?? (preferences.width == .custom ? preferences.customWidth : preferences.width.points))
-        guard !lines.isEmpty else { return sticky ? 236 : 180 }
+        guard !lines.isEmpty else { return sticky ? 236 : 208 }
         let primary = stablePrimaryHeight(lines: lines, preferences: preferences, width: resolvedWidth)
         let alternatives = min(preferences.alternativePreviews, max(0, lines.count - 1))
         let rail = alternativeBlockHeight(count: alternatives, sticky: sticky, preferences: preferences)
         let body = primary + (rail > 0 ? sectionSpacing + rail : 0)
-        return ceil(body + (sticky ? pinnedReservedChromeHeight : outerPadding * 2))
+        return ceil(body + (sticky ? pinnedReservedChromeHeight : outerPadding * 2 + 28))
     }
 
     static func size(lines: [TicketLine], sticky: Bool, preferences: PresentationPreferences, visibleFrame: CGRect) -> CGSize {
@@ -513,6 +513,11 @@ struct OverlayContent: View {
                 .clipped()
                 pinnedFooter.fixedSize(horizontal: false, vertical: true)
             } else {
+                HStack {
+                    GhostNavigationButton(systemName: "xmark", label: "End exploration", action: onClose)
+                    Text("Explore · Scroll IDs · ⌥ Scroll includes misses").font(.caption).foregroundStyle(.secondary)
+                    Spacer()
+                }.frame(height: 20)
                 resultBody
                     .frame(
                         height: OverlayMetrics.temporaryBodyHeight(totalHeight: constrainedSize.height),
@@ -603,9 +608,13 @@ struct OverlayContent: View {
                 )
             } else {
                 VStack(spacing: 12) {
-                    ProgressView().controlSize(.small)
+                    if statusText?.hasPrefix("Checking") == true || statusText?.hasPrefix("Reading") == true {
+                        ProgressView().controlSize(.small)
+                    } else {
+                        Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
+                    }
                     Text(statusText ?? "Ready for a ticket number").font(.headline)
-                    Text("Type a number, paste a ticket key, or point at one and use Inspect.").font(.callout).foregroundStyle(.secondary)
+                    Text(sticky ? "Type a number, paste a ticket key, or explore another ID." : "Hover another ID, or invoke exploration again at a new location.").font(.callout).foregroundStyle(.secondary)
                 }.frame(maxWidth: .infinity, minHeight: 160)
             }
             neighborResults(indices: neighborIndices.next, title: "NEXT")
@@ -882,6 +891,7 @@ private struct OverlayRootView: View {
 
 @MainActor final class OverlayController: NSObject, NSWindowDelegate {
     var onCycleProject: ((Int) -> Void)?
+    var onExploreNavigation: ((Int, Bool) -> Bool)?
     var onClose: (() -> Void)?
     var onInput: ((PinnedInputEvent) -> Void)?
     var onSelectionChange: ((TicketLine) -> Void)?
@@ -908,6 +918,10 @@ private struct OverlayRootView: View {
     private var preferenceObserver: NSObjectProtocol?
     private var interactionPreferenceObserver: NSObjectProtocol?
     private var lastScrollAt = Date.distantPast
+    private var scrollOpacityUntil: Date?
+    private var scrollOpacityRestore: DispatchWorkItem?
+    private var requestedScrollOpacity: CGFloat = 1
+    private var opacityAnimation: Task<Void, Never>?
     private var isPositioningProgrammatically = false
     private var presentationPreferences = PresentationPreferences.load()
     private var interactionPreferences = PopupInteractionPreferences.load()
@@ -919,6 +933,14 @@ private struct OverlayRootView: View {
     var containsPointer: Bool { panel.isVisible && panel.frame.contains(NSEvent.mouseLocation) }
 
 #if DEBUG
+    var debugOpacity: CGFloat { panel.alphaValue }
+    var debugScrollPresentation: [String: Any] {
+        ["target": requestedScrollOpacity, "pointerInside": containsPointer,
+         "until": scrollOpacityUntil?.timeIntervalSince1970 ?? 0,
+         "now": Date().timeIntervalSince1970, "frame": NSStringFromRect(panel.frame),
+         "reduceTransparency": NSWorkspace.shared.accessibilityDisplayShouldReduceTransparency]
+    }
+
     func captureProbe(to url: URL) {
         guard let view = panel.contentView else { return }
         view.layoutSubtreeIfNeeded()
@@ -1004,6 +1026,8 @@ private struct OverlayRootView: View {
     }
 
     deinit {
+        scrollOpacityRestore?.cancel()
+        opacityAnimation?.cancel()
         if let eventMonitor { NSEvent.removeMonitor(eventMonitor) }
         if let globalScrollMonitor { NSEvent.removeMonitor(globalScrollMonitor) }
         if let preferenceObserver { NotificationCenter.default.removeObserver(preferenceObserver) }
@@ -1017,6 +1041,24 @@ private struct OverlayRootView: View {
         displayedLines = Array(lines.prefix(HoverResultPolicy.maximumResults)); selectedIndex = 0
         anchorMouse = mouse; self.shortcutLabel = shortcutLabel; statusText = nil
         renderTemporary(); panel.orderFrontRegardless()
+    }
+
+    func prepareExplorationNavigation(_ direction: Int) {
+        navigationDirection = direction < 0 ? -1 : 1
+        viewState.navigationDirection = navigationDirection
+    }
+
+    func showExploration(_ lines: [TicketLine], selecting id: String? = nil, status: String?, near point: CGPoint) {
+        cancelQueuedResultNavigation()
+        let previousID = selectedLine?.id
+        if !isVisible { anchorMouse = point }
+        displayedLines = Array(lines.prefix(HoverResultPolicy.maximumResults))
+        selectedIndex = id.flatMap { selected in displayedLines.firstIndex { $0.id == selected } } ?? 0
+        statusText = status; inputText = nil; projectPreview = nil
+        if previousID != selectedLine?.id { navigationGeneration = TicketTitleSettlePolicy.nextGeneration(after: navigationGeneration) }
+        if isSticky { renderPinned(useSavedPosition: false) } else { renderTemporary() }
+        panel.orderFrontRegardless()
+        if previousID != selectedLine?.id, let selectedLine { onSelectionChange?(selectedLine) }
     }
 
     func openPinned(shortcutLabel: String, status: String = "Reading near pointer…") {
@@ -1095,13 +1137,16 @@ private struct OverlayRootView: View {
     }
     func hide() {
         cancelQueuedResultNavigation()
+        scrollOpacityRestore?.cancel(); scrollOpacityRestore = nil; scrollOpacityUntil = nil
+        setScrollOpacity(1, animated: false)
         panel.orderOut(nil); isSticky = false; inputText = nil; projectPreview = nil
         syncViewState()
     }
 
     func windowDidMove(_ notification: Notification) {
-        guard isSticky, !isPositioningProgrammatically else { return }
-        savePinnedOrigin()
+        guard !isPositioningProgrammatically else { return }
+        onExternalContentMayMove?()
+        if isSticky { savePinnedOrigin() }
     }
 
     func windowWillResize(_ sender: NSWindow, to frameSize: NSSize) -> NSSize {
@@ -1120,15 +1165,57 @@ private struct OverlayRootView: View {
         syncViewState()
     }
 
+    func updatePointerPresentation() {
+        guard let until = scrollOpacityUntil else { return }
+        let opacity = PopupScrollPresentationPolicy.opacity(pointerInside: containsPointer, recentlyScrolling: Date() < until, reduceTransparency: NSWorkspace.shared.accessibilityDisplayShouldReduceTransparency)
+        setScrollOpacity(opacity)
+        if opacity == 1 { scrollOpacityUntil = nil; scrollOpacityRestore?.cancel(); scrollOpacityRestore = nil }
+    }
+
+    private func noteExternalScroll() {
+        scrollOpacityUntil = Date().addingTimeInterval(PopupScrollPresentationPolicy.settlingDelay)
+        scrollOpacityRestore?.cancel()
+        let restore = DispatchWorkItem { [weak self] in
+            self?.scrollOpacityUntil = nil
+            self?.setScrollOpacity(1)
+        }
+        scrollOpacityRestore = restore
+        DispatchQueue.main.asyncAfter(deadline: .now() + PopupScrollPresentationPolicy.settlingDelay, execute: restore)
+        updatePointerPresentation()
+    }
+
+    private func setScrollOpacity(_ value: CGFloat, animated: Bool = true) {
+        guard requestedScrollOpacity != value || !animated else { return }
+        requestedScrollOpacity = value
+        opacityAnimation?.cancel(); opacityAnimation = nil
+        guard animated, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else { panel.alphaValue = value; return }
+        let from = panel.alphaValue
+        // Explicit, bounded interpolation also updates NSPanel's model value
+        // when a global event arrives outside an AppKit animation transaction.
+        opacityAnimation = Task { [weak self] in
+            for frame in 1...8 {
+                guard let self, !Task.isCancelled else { return }
+                let fraction = CGFloat(frame) / 8
+                let eased = 1 - (1 - fraction) * (1 - fraction)
+                panel.alphaValue = from + (value - from) * eased
+                if frame < 8 {
+                    do { try await Task.sleep(nanoseconds: 15_000_000) } catch { return }
+                }
+            }
+            self?.opacityAnimation = nil
+        }
+    }
+
     private func handle(_ event: NSEvent) -> NSEvent? {
         guard panel.isVisible else { return event }
         if event.type == .scrollWheel {
             let pointerInside = event.window === panel || panel.frame.contains(NSEvent.mouseLocation)
-            let globalChord = interactionPreferences.scrollModifier.matches(event.modifierFlags)
+            if !pointerInside { noteExternalScroll() }
+            let globalChord = event.modifierFlags.contains(interactionPreferences.scrollModifier.eventFlag)
             guard pointerInside || globalChord else { return event }
             let shiftingProject = pointerInside && isSticky && event.modifierFlags.contains(.shift)
             let delta = shiftingProject && abs(event.scrollingDeltaX) > abs(event.scrollingDeltaY) ? event.scrollingDeltaX : event.scrollingDeltaY
-            navigateScroll(delta: delta, shiftingProject: shiftingProject)
+            navigateScroll(delta: delta, shiftingProject: shiftingProject, includeMisses: event.modifierFlags.contains(.option))
             return pointerInside ? nil : event
         }
         guard isSticky, event.window === panel else { return event }
@@ -1155,20 +1242,23 @@ private struct OverlayRootView: View {
     private func handleGlobalScroll(_ event: NSEvent) {
         guard panel.isVisible,
               !panel.frame.contains(NSEvent.mouseLocation) else { return }
+        noteExternalScroll()
+        if event.modifierFlags.contains(interactionPreferences.scrollModifier.eventFlag) {
+            navigateScroll(delta: event.scrollingDeltaY, shiftingProject: false, includeMisses: event.modifierFlags.contains(.option))
+        }
         onExternalContentMayMove?()
-        guard interactionPreferences.scrollModifier.matches(event.modifierFlags) else { return }
-        navigateScroll(delta: event.scrollingDeltaY, shiftingProject: false)
     }
 
-    private func navigateScroll(delta: CGFloat, shiftingProject: Bool) {
+    private func navigateScroll(delta: CGFloat, shiftingProject: Bool, includeMisses: Bool) {
         guard abs(delta) > 0.1, Date().timeIntervalSince(lastScrollAt) > 0.10 else { return }
         lastScrollAt = Date()
         let direction = delta > 0 ? -1 : 1
         if shiftingProject { cycleProject(direction) }
-        else { cycleResult(direction) }
+        else if onExploreNavigation?(direction, includeMisses) != true { cycleResult(direction, explore: false) }
     }
 
-    private func cycleResult(_ direction: Int) {
+    private func cycleResult(_ direction: Int, explore: Bool = true) {
+        if explore, onExploreNavigation?(direction, false) == true { return }
         guard displayedLines.count > 1 else { return }
         queuedResultDirections.append(direction >= 0 ? 1 : -1)
         scheduleNextResultNavigation()

@@ -80,6 +80,58 @@ struct CalendarVersion: Equatable, Comparable, Sendable {
     }
 }
 
+/// Runtime mirror of VERSION, validated by every producer. Calendar versions
+/// remain canonical; macOS's three-component representation is never parsed
+/// as SemVer or used for update ordering.
+struct ReleaseBuildRecord: Decodable {
+    let version_scheme: String
+    let version: String
+    let release_channel: String
+    let release_sequence: Int
+    let bundle_short_version: String
+    let last_legacy_version: String
+    let first_calendar_version: String?
+    let first_calendar_sequence: Int
+
+    var identity: ReleaseIdentity? {
+        guard release_channel == ReleaseMigration.channel,
+              let scheme = VersionScheme.parse(version_scheme) else { return nil }
+        if scheme == .calendar {
+            guard let value = CalendarVersion(version),
+                  value.macOSShortVersion == bundle_short_version,
+                  last_legacy_version == ReleaseMigration.lastLegacyVersion,
+                  first_calendar_sequence == ReleaseMigration.firstCalendarSequence,
+                  let first = first_calendar_version.flatMap(CalendarVersion.init),
+                  value >= first,
+                  (release_sequence == first_calendar_sequence) == (version == first_calendar_version) else { return nil }
+        }
+        return ReleaseIdentity(rawVersion: version, scheme: scheme, sequence: release_sequence)
+    }
+}
+
+extension CalendarVersion {
+    var macOSShortVersion: String {
+        let clock = longForm ? hour * 3600 + minute * 60 + second + 1 : 0
+        return "\(year).\(month * 100 + day).\(clock)"
+    }
+
+    static func fromMacOSShortVersion(_ raw: String) -> CalendarVersion? {
+        let parts = raw.split(separator: ".", omittingEmptySubsequences: false)
+        guard parts.count == 3,
+              parts.allSatisfy({ !$0.isEmpty && $0.allSatisfy { $0.isASCII && $0.isNumber } && ($0.count == 1 || $0.first != "0") }),
+              let year = Int(parts[0]), (2000...2099).contains(year),
+              let monthDay = Int(parts[1]), (101...1231).contains(monthDay),
+              let clock = Int(parts[2]), (0...86400).contains(clock) else { return nil }
+        var canonical = String(format: "%02d.%02d.%02d", year - 2000, monthDay / 100, monthDay % 100)
+        if clock > 0 {
+            let second = clock - 1
+            canonical += String(format: ".%02d.%02d.%02d", second / 3600, second / 60 % 60, second % 60)
+        }
+        guard let value = CalendarVersion(canonical), value.macOSShortVersion == raw else { return nil }
+        return value
+    }
+}
+
 /// The immutable anchor of Nuncid's migration to `inspr-calendar-v1`
 /// (NUNCID-58). Raw legacy and calendar strings are compared only within
 /// their own scheme; cross-era ordering comes from this anchor, never from

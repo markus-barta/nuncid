@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+## [26.09.06.17.55.27] - 2026-09-06
+
+- Explore ticket IDs progressively, prioritize pending lookups, retry misses with Option + scroll, and adopt explicit calendar release identities.
+
 ## [1.2.3] - 2026-09-06
 
 - Choose the target after clicking Nuncid instead of scanning numbers in the menu bar.

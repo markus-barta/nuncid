@@ -21,6 +21,20 @@ struct ReleaseNote: Identifiable, Equatable {
 enum ReleaseHistory {
     static let notes: [ReleaseNote] = [
         ReleaseNote(
+            version: "26.09.06.17.55.27",
+            isoDate: "2026-09-06",
+            date: "6 September 2026",
+            theme: "Explore at your own pace",
+            headline: "One invocation. A screen full of context.",
+            intro: "Nuncid discovers IDs progressively around your pointer, resolves nearby candidates in parallel, and keeps their source markers and cards connected.",
+            items: [
+                ReleaseNoteItem(label: "Ready when you point", detail: "Hover briefly to prioritize an ID and open its cached card. Soft outlines distinguish queued and checking IDs; tiny check and question badges distinguish verified matches from unsuccessful lookups."),
+                ReleaseNoteItem(label: "Browse, or deliberately retry", detail: "Scroll through matches and pending IDs. Option + scroll also includes unsuccessful IDs for another try. Outside scrolling gently fades the card and refreshes source markers without discarding context."),
+                ReleaseNoteItem(label: "Simpler controls", detail: "One on-demand exploration action replaces the three activation modes. Tune hover delay and parallel lookups; close the card or press Escape to finish."),
+                ReleaseNoteItem(label: "A date you can trust", detail: "Releases now use UTC calendar coordinates with explicit update metadata. Existing releases keep their identities, and macOS receives a lossless compatible bundle version.")
+            ]
+        ),
+        ReleaseNote(
             version: "1.2.3",
             isoDate: "2026-09-06",
             date: "6 September 2026",
@@ -355,10 +369,15 @@ struct VersionHistoryView: View {
                     .fill(current ? Color.accentColor : Color.secondary.opacity(0.35))
                     .frame(width: 7, height: 7)
                 VStack(alignment: .leading, spacing: 2) {
+                    Text("v\(note.version)")
+                        .font(.callout.monospacedDigit().weight(.semibold))
+                        .foregroundStyle(selected ? Color.white : Color.primary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
                     HStack(spacing: 6) {
-                        Text("v\(note.version)")
-                            .font(.callout.monospacedDigit().weight(.semibold))
-                            .foregroundStyle(selected ? Color.white : Color.primary)
+                        Text(note.date)
+                            .font(.caption2)
+                            .foregroundStyle(selected ? Color.white.opacity(0.72) : Color.secondary)
                         if current {
                             Text("CURRENT")
                                 .font(.system(size: 8, weight: .bold))
@@ -366,9 +385,6 @@ struct VersionHistoryView: View {
                                 .foregroundStyle(selected ? Color.white.opacity(0.85) : Color.accentColor)
                         }
                     }
-                    Text(note.date)
-                        .font(.caption2)
-                        .foregroundStyle(selected ? Color.white.opacity(0.72) : Color.secondary)
                 }
                 Spacer(minLength: 0)
             }

@@ -7,10 +7,7 @@ readme="$repo_dir/README.md"
 changelog="$repo_dir/CHANGELOG.md"
 history_file="$repo_dir/Sources/Nuncid/ReleaseHistory.swift"
 
-if [[ ! "$version" =~ '^[0-9]+\.[0-9]+\.[0-9]+$' ]]; then
-  print -u2 "Invalid semantic version in VERSION: $version"
-  exit 1
-fi
+python3 "$repo_dir/scripts/release-policy.py" validate >/dev/null
 
 grep -q "release-$version-" "$readme" || { print -u2 "README release badge does not match $version"; exit 1; }
 grep -q "Latest release $version" "$readme" || { print -u2 "README release badge alt text does not match $version"; exit 1; }
@@ -44,7 +41,7 @@ if [[ "$history_version" != "$version" ]]; then
   exit 1
 fi
 
-download_references=$(grep -oE 'releases/download/v[0-9]+\.[0-9]+\.[0-9]+' "$readme") || {
+download_references=$(grep -oE 'releases/download/v[0-9]+(\.[0-9]+)+' "$readme") || {
   grep_status=$?
   if (( grep_status != 1 )); then
     print -u2 "Could not inspect README download references (grep exit $grep_status)."
@@ -77,6 +74,11 @@ for stem in pinned-card settings-scanning settings-pinned settings-appearance ve
     exit 1
   }
 done
+
+if cmp -s "$repo_dir/docs/screenshots/version-history-$version.png" "$repo_dir/docs/screenshots/version-history-dark-$version.png"; then
+  print -u2 'Light and dark Version History captures must actually differ.'
+  exit 1
+fi
 
 social_size=$(wc -c < "$repo_dir/docs/screenshots/social-preview-$version.png" | tr -d '[:space:]')
 if (( social_size >= 1000000 )); then

@@ -62,10 +62,13 @@ struct ResolvedCandidate: Hashable, Sendable {
 
 actor TicketResolver {
     private var cache: [String: CacheEntry] = [:]
+    private var resolvingKeys = Set<String>()
     private let defaultsKey = "resolutionCacheV1"
+    private let lookupForTesting: (@Sendable (CandidateSpec) async -> TicketLine?)?
 
-    init() {
-        if let data = UserDefaults.standard.data(forKey: defaultsKey),
+    init(lookupForTesting: (@Sendable (CandidateSpec) async -> TicketLine?)? = nil) {
+        self.lookupForTesting = lookupForTesting
+        if lookupForTesting == nil, let data = UserDefaults.standard.data(forKey: defaultsKey),
            let decoded = try? JSONDecoder().decode([String: CacheEntry].self, from: data) { cache = decoded }
     }
 
@@ -75,10 +78,28 @@ actor TicketResolver {
             let ttl: TimeInterval = entry.line == nil ? 60 : 15 * 60
             if Date().timeIntervalSince(entry.savedAt) < ttl { return Task.isCancelled ? nil : entry.line }
         }
+        // Different visible literals can propose the same tracker key. Share
+        // the first result without letting cancellation of a waiter cancel its owner.
+        while resolvingKeys.contains(spec.cacheKey) {
+            do { try await Task.sleep(nanoseconds: 20_000_000) } catch { return nil }
+            if let entry = cache[spec.cacheKey], Date().timeIntervalSince(entry.savedAt) < (entry.line == nil ? 60 : 15 * 60) { return Task.isCancelled ? nil : entry.line }
+        }
+        guard !Task.isCancelled else { return nil }
+        resolvingKeys.insert(spec.cacheKey)
+        defer { resolvingKeys.remove(spec.cacheKey) }
+        await TrackerReadBudget.shared.configure(ExplorationPreferences.load().parallelLookups)
+        guard await TrackerReadBudget.shared.acquire() else { return nil }
+        defer { Task { await TrackerReadBudget.shared.release() } }
+        guard !Task.isCancelled else { return nil }
+        // Another waiter may have filled the cache while we waited for a slot.
+        if let entry = cache[spec.cacheKey], Date().timeIntervalSince(entry.savedAt) < (entry.line == nil ? 60 : 15 * 60) { return entry.line }
         let line: TicketLine?
-        switch spec {
-        case let .issue(tracker, key): line = await resolveIssue(tracker: tracker, key: key)
-        case let .pullRequest(number, repo): line = await resolvePullRequest(number: number, repo: repo)
+        if let lookupForTesting { line = await lookupForTesting(spec) }
+        else {
+            switch spec {
+            case let .issue(tracker, key): line = await resolveIssue(tracker: tracker, key: key)
+            case let .pullRequest(number, repo): line = await resolvePullRequest(number: number, repo: repo)
+            }
         }
         // Cancellation is not a negative lookup and must never poison the miss cache.
         guard !Task.isCancelled else { return nil }
@@ -152,7 +173,15 @@ actor TicketResolver {
             .map { $0 }
     }
 
-    func clearCache() { cache.removeAll(); UserDefaults.standard.removeObject(forKey: defaultsKey) }
+    func forgetMisses(for specs: [CandidateSpec]) {
+        for spec in specs where cache[spec.cacheKey]?.line == nil { cache.removeValue(forKey: spec.cacheKey) }
+        persist()
+    }
+
+    func clearCache() {
+        cache.removeAll()
+        if lookupForTesting == nil { UserDefaults.standard.removeObject(forKey: defaultsKey) }
+    }
 
     private func resolveIssue(tracker: Tracker, key: String) async -> TicketLine? {
         guard let executable = Self.findExecutable(named: "paimos"),
@@ -194,8 +223,9 @@ actor TicketResolver {
     }
 
     private func persist() {
-        let recent = cache.filter { Date().timeIntervalSince($0.value.savedAt) < 86_400 }
-        if let data = try? JSONEncoder().encode(recent) { UserDefaults.standard.set(data, forKey: defaultsKey) }
+        guard lookupForTesting == nil else { return }
+        cache = cache.filter { Date().timeIntervalSince($0.value.savedAt) < 86_400 }
+        if let data = try? JSONEncoder().encode(cache) { UserDefaults.standard.set(data, forKey: defaultsKey) }
     }
 
     private static func findExecutable(named name: String) -> URL? {
@@ -264,7 +294,7 @@ actor TicketResolver {
         if process.isRunning { process.terminate() }
         if process.isRunning { await uncancelledPause(nanoseconds: ProcessExecutionPolicy.terminationGraceNanoseconds) }
         if process.isRunning { kill(process.processIdentifier, SIGKILL) }
-        if process.isRunning { await uncancelledPause(nanoseconds: ProcessExecutionPolicy.killGraceNanoseconds) }
+        while process.isRunning { await uncancelledPause(nanoseconds: ProcessExecutionPolicy.killGraceNanoseconds) }
     }
 
     private static func uncancelledPause(nanoseconds: UInt64) async {

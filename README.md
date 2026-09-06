@@ -1,9 +1,9 @@
 <p align="center">
-  <img src="docs/screenshots/hero-1.2.3.png" alt="Nuncid — point at a ticket and know what matters" width="100%">
+  <img src="docs/screenshots/hero-26.09.06.17.55.27.png" alt="Nuncid — point at a ticket and know what matters" width="100%">
 </p>
 
 <p align="center">
-  <a href="https://github.com/markus-barta/nuncid/releases/latest"><img src="https://img.shields.io/badge/release-1.2.3-0A84FF?style=flat-square" alt="Latest release 1.2.3"></a>
+  <a href="https://github.com/markus-barta/nuncid/releases/latest"><img src="https://img.shields.io/badge/release-26.09.06.17.55.27-0A84FF?style=flat-square" alt="Latest release 26.09.06.17.55.27"></a>
   <img src="https://img.shields.io/badge/macOS-13%2B-111827?style=flat-square&logo=apple" alt="macOS 13 or newer">
   <img src="https://img.shields.io/badge/Swift-5.10-F05138?style=flat-square&logo=swift&logoColor=white" alt="Swift 5.10">
   <img src="https://img.shields.io/badge/OCR-local-22C55E?style=flat-square" alt="Local OCR">
@@ -26,17 +26,17 @@
 
 ## Look once. Keep moving.
 
-Nuncid watches a small area around the pointer, recognizes ticket keys and numbers with Apple Vision, and resolves only real matches through your existing Paimos and GitHub sessions. The strongest result gets the space it deserves—key, state, title, metadata, and useful detail—while the next likely matches remain visible before you scroll.
+Invoke Nuncid to start an **on-demand exploration session**. Apple Vision discovers ticket keys and numbers progressively outward from the pointer over the invoked display. Nearby candidates resolve first through your existing Paimos and GitHub sessions; hovering prioritizes a pending ID and opens its cached card. Nothing scans while the session is idle.
 
 <p align="center">
-  <img src="docs/screenshots/workflow-1.2.3.png" alt="Nuncid keeps the current ticket fixed between previous and next results" width="100%">
+  <img src="docs/screenshots/workflow-26.09.06.17.55.27.png" alt="Nuncid keeps the current ticket fixed between previous and next results" width="100%">
 </p>
 
 | Invoke anywhere | Keep context nearby | Navigate without friction |
 | --- | --- | --- |
-| The **activation shortcut** can stay off, toggle hover scanning, or scan once when pressed. Toggled hover scans each newly settled pointer location once—never in a timer loop. | Move into a temporary card without racing it, pin or unpin directly, and resize from any edge. Nuncid remembers the card’s size, position, and pin state. | Previous and next tickets move around a fixed primary card. Scroll inside it normally, or hold your chosen modifier to navigate while working in another app. |
+| The **activation shortcut** starts exploration at the pointer. Invoking again prioritizes that location; the menu icon waits until you point at content. | Cards remain open until closed or Escape ends the session. Pin or unpin directly; resize and position the pinned card as before. | Normal scrolling includes matches and not-yet-tried/checking IDs. **Option + scroll** additionally includes unsuccessful IDs and deliberately retries them. |
 
-The optional scan-start cue shows where Nuncid begins looking. Once a card appears, the active ID stays highlighted beside the exact text that produced it—even while the card is temporary—and follows result navigation without stealing focus.
+All visible candidates receive softly rounded outlines: dotted for queued, blue for checking, green with a tiny vector check for matched, and gray with a question badge for unsuccessful. The selected source gets restrained emphasis while its card is visible, whether pinned or temporary.
 
 When you scroll, every row follows one continuous direction while the ticket key and first title line travel between NEXT, the fixed card, and PREVIOUS. Long titles remain on one line while moving, then reveal their wrapped lines after landing—so the card never jumps.
 
@@ -44,34 +44,36 @@ The pinned header keeps its grab handle, pin state, and result position centered
 
 ## Every card points back to its source
 
-The active lookup arrives with a one-time luminous lock-on, then remains readable for as long as its card is visible. If you pin the card, **Show all detected IDs** can keep every ID from that scan marked in place: the selected result uses Nuncid blue, while the remaining IDs stay quiet but legible.
+The active source remains emphasized for as long as its card is visible. All candidates are marked during exploration—there is no pinned-only visibility switch. A pending selection shows “Checking…” rather than inventing ticket content.
 
 <p align="center">
-  <img src="docs/screenshots/lookup-highlight-1.2.3.png" alt="Nuncid highlights the active lookup and keeps all detected IDs visible while pinned" width="100%">
+  <img src="docs/screenshots/lookup-highlight-26.09.06.17.55.27.png" alt="Nuncid exploration distinguishes queued, checking, matched, and unsuccessful source IDs" width="100%">
 </p>
 
-These markers ignore mouse input, respect Reduce Motion, use consistent spacing around the source text, and remain excluded from screen capture. They clear as soon as a scroll, app or Space switch, or source-window change could make their saved position stale.
+Markers ignore mouse input, do not animate, and remain excluded from screen capture. Source scrolling or window/Space changes invalidate stale coordinates immediately. After a short settling delay, Nuncid rediscovers visible IDs and reanchors their markers while keeping the card and cached results. Off-screen IDs lose only their outline.
 
 ## Your shortcuts. Your card.
 
-Activation and presentation are independent on purpose. Left-click the menu bar icon to **choose a target**: move out of the menu bar, then pause over an ID for a moment (0.35 seconds) or click it to scan once. The icon click itself never scans menu-bar numbers. Click Nuncid again, or open its right-click menu, to cancel; selection expires after 15 seconds. Target clicks pass through to the source app, so hovering is preferable over links or controls you do not want to activate. The activation shortcut still scans immediately at the current pointer in Press to Scan mode; neither action changes your saved hover setting. Record any safe global shortcut, choose Off, Toggle Hover, or Press to Scan, and tune how much information the card shows. The menu bar icon shows when hover is active and confirms when it finds a ticket. Settings apply immediately; the appearance preview uses local sample data and never contacts a tracker.
+Left-click the menu icon to **choose where exploration begins**: leave the menu bar, then pause over content for 0.35 seconds or click it. Menu-bar numbers are never the click's target. A second click or right-click menu cancels an armed selection; unused selection expires after 15 seconds. Target clicks pass through, so hover over links you do not want to activate. The shortcut starts immediately at the pointer. During an active session, a new invocation prioritizes its new location.
 
-| Hover off | Hover on | Ticket found |
+Settings now expose the shortcut, **hover delay (default 100 ms, 0–500 ms)** and **parallel lookups (default 3, 1–5)**. Existing shortcuts and unrelated card preferences survive migration; an old Off mode leaves the shortcut disabled. Closing the card or pressing Escape stops exploration. Settings apply immediately, and appearance previews use only local sample data.
+
+| Idle | Exploring | Ticket found |
 | --- | --- | --- |
 | <img src="docs/screenshots/menu-hover-off-0.3.2.png" alt="Dimmed Nuncid menu bar icon: hover is off" width="40"> | <img src="docs/screenshots/menu-hover-on-0.3.2.png" alt="Filled viewfinder menu bar icon: hover is on" width="40"> | <img src="docs/screenshots/menu-ticket-found-0.3.2.png" alt="Checkmark menu bar icon: ticket found" width="40"> |
 
 <p align="center">
-  <img src="docs/screenshots/settings-showcase-1.2.3.png" alt="Nuncid activation and spatial card appearance settings" width="100%">
+  <img src="docs/screenshots/settings-showcase-26.09.06.17.55.27.png" alt="Nuncid activation and spatial card appearance settings" width="100%">
 </p>
 
-Nuncid can show zero to six neighboring destinations and offers four text sizes, three presets plus a remembered Custom size, three content densities, and system or solid surfaces. Pinned Card settings also control the global scroll modifier and whether all detected IDs remain visible. Cards adapt their content to the available space instead of forcing every ticket into the same dimensions.
+Nuncid can show zero to six neighboring destinations and offers four text sizes, three presets plus a remembered Custom size, three content densities, and system or solid surfaces. Pinned Card settings retain the global scroll modifier and direct-entry controls. Cards adapt their content to the available space instead of forcing every ticket into the same dimensions.
 
 ## What changed—and why it feels better
 
 The app’s **Version History** explains each release in concise, positive human language. Open it from the menu, About window, or by clicking the version in Settings; your running version is always highlighted.
 
 <p align="center">
-  <img src="docs/screenshots/version-history-1.2.3.png" alt="Nuncid Version History with the current release highlighted and benefit-led notes" width="100%">
+  <img src="docs/screenshots/version-history-26.09.06.17.55.27.png" alt="Nuncid Version History with the current release highlighted and benefit-led notes" width="100%">
 </p>
 
 ## Smarter resolution, fewer wrong guesses
@@ -97,7 +99,7 @@ gh pr view … --json …
 
 Those tools may contact their configured services using your existing credentials. Nuncid never writes to either service. Scan and lookup-marker panels opt out of screen capture, and the only learned hint is a bounded, decaying project association keyed by application bundle identifier. Settings can clear it together with cached titles.
 
-Nuncid also makes an infrequent, bounded, read-only HTTPS request to GitHub's public latest-release endpoint for `markus-barta/nuncid`. It sends no credentials, screenshots, OCR text, ticket content, or telemetry; it accepts only a stable semantic-version tag and its matching canonical GitHub release URL. Offline or invalid responses simply leave update status unavailable.
+Nuncid also makes an infrequent, bounded, read-only HTTPS request to GitHub's public latest-release endpoint for `markus-barta/nuncid`. It sends no credentials, screenshots, OCR text, ticket content, or telemetry; it accepts only validated, explicitly classified release identities and their matching canonical GitHub release URL. Offline or invalid responses simply leave update status unavailable.
 
 ## Install
 
@@ -111,7 +113,7 @@ Default commands:
 
 | Command | Shortcut | Behavior |
 | --- | --- | --- |
-| Activation | `⌥Space` | Follow the selected behavior; Press to Scan is the default. |
+| Explore | `⌥Space` | Start or reprioritize exploration at the pointer. |
 | Pin / direct open | `⇧⌥Space` | Open pinned, pin the temporary card, focus it, or close it. |
 
 Both shortcuts are fully configurable. F1 through F20 work without modifiers; regular keys require a safe global modifier. The native recorder reports unsafe choices and conflicts directly in Settings.
@@ -120,16 +122,17 @@ Both shortcuts are fully configurable. F1 through F20 work without modifiers; re
 
 | Input | Result |
 | --- | --- |
-| Mouse wheel | Select another resolved ticket. |
+| Mouse wheel | Browse matches and untried/queued/checking IDs; skip unsuccessful IDs. |
+| `⌥` + mouse wheel | Also include unsuccessful IDs and deliberately retry a selected miss. |
 | `⇧` + mouse wheel | Keep the number and try another project. |
 | Chosen modifier + wheel, anywhere | Select another result while any app remains active. |
 | Type digits | Jump to a ticket number while keeping the project. |
 | Type letters | Fuzzy-match a project; the best guess previews immediately. |
 | Paste `PHAROS-203`, `#203`, or `203` | Resolve a full key, pull request, or number directly. |
 | Return | Apply the previewed input. |
-| Escape | Clear the current input, then close. |
+| Escape | End exploration. Outside exploration, clear direct-entry input, then close. |
 
-Typing is captured only while the pinned card is focused. Global wheel navigation is passive: Nuncid responds to the configured modifier without consuming the active app’s scroll event.
+Typing is captured only while the pinned card is focused. Global wheel navigation is passive: Nuncid responds to the configured modifier without consuming the active app’s scroll event. While you scroll outside the card, it fades to 50% opacity; it returns when scrolling settles or the pointer re-enters. Reduce Transparency keeps it opaque.
 
 ## Build from source
 
@@ -151,14 +154,15 @@ colors from the app's appearance.
 
 ## Update compatibility (NUNCID-58)
 
-**1.2.1 is a SemVer bridge, not the calendar cutover.** Install it before moving
-to future date-based releases. The 1.2.0 checker rejects zero-padded calendar
-tags and cannot discover them; its path is 1.2.0 → 1.2.1 → calendar. Keep the
+**1.2.1 is a SemVer compatibility bridge.** The 1.2.0 checker rejects calendar
+tags and cannot discover the new releases. A manual download of the current
+release works directly; alternatively, install 1.2.1 to regain in-app update
+discovery, then follow its calendar-release link. Keep the
 [1.2.1 bridge release](https://github.com/markus-barta/nuncid/releases/tag/v1.2.1)
 available for older installations even after the latest release changes.
 Earlier bridge builds have frozen legacy inventories: download the latest
-hotfix directly if their checker reports unavailable. Calendar releases remain
-gated; the last legacy anchor is now 1.2.3.
+hotfix directly if their checker reports unavailable. The last legacy anchor
+is 1.2.3 (sequence 19).
 
 The bridge recognizes only the explicit legacy release inventory without
 metadata. Future calendar releases require exactly one closed
@@ -171,17 +175,26 @@ inconsistent metadata makes update status unavailable rather than guessing.
 Calendar date order and sequence order must agree; an older release is never
 offered as an update. This check links to downloads; it does not install them.
 
-The first calendar coordinate is **not yet reserved**. Calendar publishing,
-its immutable release-set manifest, macOS bundle-version mapping, and exact
-artifact rollback remain gated by NUNCID-58. Legacy parsing stays supported
-until a separately approved compatibility-window closeout.
+The first calendar coordinate is **26.09.06.17.55.27**, sequence **20**, reserved
+once in UTC. `VERSION` is authoritative; `Sources/Nuncid/Resources/Release.json`
+is its consistency-checked runtime metadata mirror and pins the migration anchor.
+Legacy parsing stays supported until a separately approved closeout.
+
+macOS requires a three-numeric-component `CFBundleShortVersionString`. Its local
+compatibility representation is `YYYY.(100×MM+DD).T`, where `T` is zero for a
+short coordinate or seconds after midnight plus one for a long coordinate.
+Thus short form and long midnight remain distinct. Executable round-trip tests
+cover every supported date and every second of a day. This is **not SemVer** and
+is never used for update ordering. `CFBundleVersion` remains the increasing Git
+commit count; the canonical version and scheme are separately embedded in the
+signed bundle, runtime record, release body, and immutable release-set manifest.
 
 ## Release and visual workflow
 
 [`VERSION`](VERSION) is the source of truth for the packaged version; [`CHANGELOG.md`](CHANGELOG.md) keeps the user-visible history.
 
 ```sh
-./scripts/bump-version.sh patch "Short user-visible release summary"
+./scripts/bump-version.sh calendar "Short user-visible release summary"
 ```
 
 Add the matching benefit-led entry to `ReleaseHistory.swift`, then capture and compose the new interface before running consistency-gated tests:
@@ -190,9 +203,23 @@ Add the matching benefit-led entry to `ReleaseHistory.swift`, then capture and c
 ./scripts/capture-release-shots.sh
 swift scripts/render-marketing-shots.swift
 ./scripts/test.sh
+# Review and commit the complete source/visual tree before sealing a candidate.
 ./scripts/package-release.sh
 ./scripts/verify-release.sh
 ```
+
+Every release uses a long UTC coordinate. Reservation rejects same-second,
+older, and already-used coordinates. Packaging never overwrites an archive or
+release-set manifest. A changed release artifact requires a later reservation;
+an identical artifact is reused by its verified digest, not silently rebuilt.
+Publish the ZIP, SHA-256 file and release-set JSON together, with the metadata
+block emitted by `python3 scripts/release-policy.py metadata` in the release body.
+
+For rollback, download the previous published ZIP and immutable release-set
+manifest, verify its SHA-256 and signature, preserve the current installation,
+and install **those exact archived bytes**. Record the deployment and digest;
+do not rename a historical release or decrement the version source. Legacy
+rollback archives retain their original `CFBundleShortVersionString`.
 
 The capture script opens DEBUG-only visual probes long enough to save the current pinned card, Scanning, Appearance, and light/dark Version History. The compositor reads `VERSION` and rebuilds the README hero, feature gallery, and social preview from those same-version captures plus the checked-in scan-field artwork. Historical GLINT captures and the [0.3.0 visual comparison](docs/compare-0.3.0.html) remain unchanged so the release record stays truthful. The [rename decision and migration record](docs/nuncid-rename-2026-08-30.md) documents the collision screen and compatibility choices.
 
@@ -222,7 +249,8 @@ scripts/capture-release-shots.sh
 scripts/package-app.sh       Release build, app bundle, metadata, and local signing
 scripts/package-release.sh   Signed app plus versioned release archive
 scripts/verify-release.sh    Signature, archive, metadata, and portable smoke checks
-scripts/bump-version.sh      Semantic version and changelog update
+scripts/bump-version.sh      UTC calendar reservation and changelog update
+scripts/release-policy.py    Metadata validation, macOS mapping and release sets
 scripts/render-marketing-shots.swift
                              Reproducible GitHub image compositor
 ```

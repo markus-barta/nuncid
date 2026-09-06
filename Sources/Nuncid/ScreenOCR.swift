@@ -150,7 +150,7 @@ actor ScreenOCR {
         plan: CapturePlan,
         preservingIdentifierGeometry: Bool
     ) -> [RecognizedTextFragment] {
-        guard let image = CGWindowListCreateImage(
+        guard !Task.isCancelled, let image = CGWindowListCreateImage(
             plan.rect,
             .optionOnScreenOnly,
             kCGNullWindowID,
