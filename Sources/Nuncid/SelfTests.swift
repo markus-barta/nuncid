@@ -145,57 +145,183 @@ private final class SelfTestAsyncResult: @unchecked Sendable {
             fputs("self-test failed: bounded release response body\n", stderr)
             exit(1)
         }
-        func releasePayload(tag: String, url: String? = nil, prerelease: Bool = false) -> Data {
-            let releaseURL = url ?? "https://github.com/markus-barta/nuncid/releases/tag/\(tag)"
-            return Data("""
-            {"tag_name":"\(tag)","html_url":"\(releaseURL)","draft":false,"prerelease":\(prerelease)}
-            """.utf8)
+        let validCalendar = ["26.08.31", "26.08.31.14.05.09", "24.02.29", "00.01.01.00.00.00"]
+        let invalidCalendar = ["2026.08.31", "26.8.31", "26.02.29", "26.04.31", "26.08.31.24.00.00", "26.08.31.12.60.00", "26.08.31.12.00", "26.13.01", "26.00.10"]
+        guard CalendarVersion("26.09.00") == nil,
+              CalendarVersion("26.09.06\n") == nil,
+              validCalendar.allSatisfy({ CalendarVersion($0) != nil }),
+              invalidCalendar.allSatisfy({ CalendarVersion($0) == nil }) else {
+            fputs("self-test failed: strict calendar version parsing (inspr-calendar-v1)\n", stderr)
+            exit(1)
         }
+        guard CalendarVersion("24.02.29")! < CalendarVersion("26.01.01")!,
+              CalendarVersion("26.08.31")! < CalendarVersion("26.08.31.14.05.09")!,
+              CalendarVersion("26.08.31")! == CalendarVersion("26.08.31.00.00.00")!,
+              CalendarVersion("26.08.31.14.05.09")! < CalendarVersion("26.08.31.14.05.10")! else {
+            fputs("self-test failed: calendar ordering (short form normalizes to 00.00.00)\n", stderr)
+            exit(1)
+        }
+        func legacyIdentity(_ raw: String) -> ReleaseIdentity? {
+            ReleaseIdentity(rawVersion: raw, scheme: .legacy)
+        }
+        func calendarIdentity(_ raw: String) -> ReleaseIdentity? {
+            ReleaseIdentity(rawVersion: raw, scheme: .calendar, sequence: raw == "26.09.06" ? 18 : 19)
+        }
+        guard legacyIdentity("1.2.0") != nil,
+              calendarIdentity("26.09.06") != nil,
+              ReleaseIdentity.unclassified("1.2.0")?.scheme == .legacy,
+              ReleaseIdentity.unclassified("26.08.31") == nil,
+              ReleaseIdentity.unclassified("26.11.11") == nil,
+              legacyIdentity("26.11.11") == nil,
+              calendarIdentity("1.2.0") == nil,
+              ReleaseIdentity.unclassified("Development") == nil else {
+            fputs("self-test failed: release identity discrimination (ambiguous or invalid values fail closed)\n", stderr)
+            exit(1)
+        }
+        guard calendarIdentity("26.09.06")!.isNewerThan(legacyIdentity("1.2.0")!) == true,
+              legacyIdentity("1.2.0")!.isNewerThan(calendarIdentity("26.09.06")!) == false,
+              legacyIdentity("2.0.0") == nil,
+              SemanticVersion("26.09.06") == nil,
+              SemanticVersion("1.2.1")! > SemanticVersion("1.2.0")!,
+              calendarIdentity("26.09.06.10.30.00")!.isNewerThan(calendarIdentity("26.09.06")!) == true,
+              calendarIdentity("26.09.06")!.isNewerThan(calendarIdentity("26.09.06.10.30.00")!) == false,
+              calendarIdentity("26.09.06")!.isNewerThan(calendarIdentity("26.09.06")!) == false else {
+            fputs("self-test failed: mixed-era and same-day release ordering through the migration anchor\n", stderr)
+            exit(1)
+        }
+        func releasePayload(tag: String, url: String? = nil, prerelease: Bool = false, body: String? = nil) -> Data {
+            let releaseURL = url ?? "https://github.com/markus-barta/nuncid/releases/tag/\(tag)"
+            var payload: [String: Any] = ["tag_name": tag, "html_url": releaseURL,
+                                          "draft": false, "prerelease": prerelease]
+            if let body { payload["body"] = body }
+            return try! JSONSerialization.data(withJSONObject: payload)
+        }
+        func calendarMetadata(_ version: String, sequence: Int, scheme: String = "inspr-calendar-v1") -> String {
+            "\nSome user-facing release notes.\n\n<!-- nuncid-release-metadata\nversion-scheme: \(scheme)\nversion: \(version)\nrelease-channel: stable\nrelease-sequence: \(sequence)\n-->\n"
+        }
+        let calendarRelease = releasePayload(tag: "v26.09.06", body: calendarMetadata("26.09.06", sequence: 18))
+        let nextSameDayRelease = releasePayload(tag: "v26.09.06.10.30.00", body: calendarMetadata("26.09.06.10.30.00", sequence: 19))
+        let mismatchedMetadata = releasePayload(
+            tag: "v26.09.06",
+            body: calendarMetadata("26.09.07", sequence: 17)
+        )
+        let unknownSchemeMetadata = releasePayload(
+            tag: "v26.09.06",
+            body: calendarMetadata("26.09.06", sequence: 17, scheme: "semver")
+        )
+        let missingSequenceMetadata = releasePayload(
+            tag: "v26.09.06",
+            body: "\n<!-- nuncid-release-metadata\nversion-scheme: inspr-calendar-v1\nversion: 26.09.06\nrelease-channel: stable\n-->\n"
+        )
         let canonicalEndpoint = CanonicalReleasePolicy.endpoint
+        let metadata = calendarMetadata("26.09.06", sequence: 18)
+        let invalidBodies: [String?] = [
+            nil, "", metadata.replacingOccurrences(of: "-->\n", with: ""),
+            metadata + metadata,
+            metadata.replacingOccurrences(of: "inspr-calendar-v1", with: "unknown"),
+            metadata.replacingOccurrences(of: "release-sequence: 18", with: "release-sequence: 17"),
+            metadata.replacingOccurrences(of: "release-sequence: 18", with: "release-sequence: 018"),
+            metadata.replacingOccurrences(of: "release-channel: stable", with: "release-channel: beta"),
+            metadata.replacingOccurrences(of: "version: 26.09.06", with: "version: 26.09.07"),
+            metadata.replacingOccurrences(of: "release-sequence: 18", with: "version: 26.09.06\nrelease-sequence: 18")
+        ]
+        guard invalidBodies.allSatisfy({ body in
+            CanonicalReleasePolicy.evaluate(installed: legacyIdentity("1.2.1"),
+                data: releasePayload(tag: "v26.09.06", body: body),
+                responseURL: canonicalEndpoint, statusCode: 200) == .unavailable
+        }),
+        CanonicalReleasePolicy.evaluate(installed: legacyIdentity("1.2.0"),
+            data: releasePayload(tag: "v1.2.1"), responseURL: canonicalEndpoint, statusCode: 200)
+            == .available(version: "1.2.1", url: URL(string: "https://github.com/markus-barta/nuncid/releases/tag/v1.2.1")!),
+        CanonicalReleasePolicy.evaluate(installed: legacyIdentity("1.2.1"),
+            data: calendarRelease, responseURL: canonicalEndpoint, statusCode: 200)
+            == .available(version: "26.09.06", url: URL(string: "https://github.com/markus-barta/nuncid/releases/tag/v26.09.06")!),
+        ReleaseIdentity(rawVersion: "26.09.06", scheme: .calendar) == nil,
+        ReleaseIdentity(rawVersion: "1.2.1", scheme: .legacy, sequence: 16) == nil,
+        ReleaseIdentity(rawVersion: "26.09.06.10.30.00", scheme: .calendar, sequence: 18)!
+            .isNewerThan(calendarIdentity("26.09.06")!) == nil else {
+            fputs("self-test failed: bridge metadata, sequence, and update-path gates\n", stderr); exit(1)
+        }
         guard CanonicalReleasePolicy.evaluate(
-            currentVersion: "1.1.0", data: releasePayload(tag: "v1.2.0"),
+            installed: legacyIdentity("1.1.0"), data: releasePayload(tag: "v1.2.0"),
             responseURL: canonicalEndpoint, statusCode: 200
         ) == .available(
             version: "1.2.0",
             url: URL(string: "https://github.com/markus-barta/nuncid/releases/tag/v1.2.0")!
         ), CanonicalReleasePolicy.evaluate(
-            currentVersion: "1.2.0", data: releasePayload(tag: "v1.2.0"),
+            installed: legacyIdentity("1.2.0"), data: releasePayload(tag: "v1.2.0"),
             responseURL: canonicalEndpoint, statusCode: 200
         ) == .current,
         CanonicalReleasePolicy.evaluate(
-            currentVersion: "1.2.0", data: releasePayload(tag: "v1.1.0"),
+            installed: legacyIdentity("1.2.0"), data: releasePayload(tag: "v1.1.0"),
             responseURL: canonicalEndpoint, statusCode: 200
         ) == .current,
         CanonicalReleasePolicy.evaluate(
-            currentVersion: "1.1.0", data: releasePayload(tag: "v1.2.0", prerelease: true),
+            installed: legacyIdentity("1.1.0"), data: releasePayload(tag: "v1.2.0", prerelease: true),
             responseURL: canonicalEndpoint, statusCode: 200
         ) == .unavailable,
         CanonicalReleasePolicy.evaluate(
-            currentVersion: "1.1.0", data: releasePayload(tag: "nightly"),
+            installed: legacyIdentity("1.1.0"), data: releasePayload(tag: "nightly"),
             responseURL: canonicalEndpoint, statusCode: 200
         ) == .unavailable,
         CanonicalReleasePolicy.evaluate(
-            currentVersion: "1.1.0",
+            installed: legacyIdentity("1.1.0"),
             data: releasePayload(tag: "v1.2.0", url: "https://example.com/markus-barta/nuncid/releases/tag/v1.2.0"),
             responseURL: canonicalEndpoint, statusCode: 200
         ) == .unavailable,
         CanonicalReleasePolicy.evaluate(
-            currentVersion: "1.1.0", data: releasePayload(tag: "v1.2.0"),
+            installed: legacyIdentity("1.1.0"), data: releasePayload(tag: "v1.2.0"),
             responseURL: URL(string: "https://api.github.com/repos/other/nuncid/releases/latest"), statusCode: 200
         ) == .unavailable,
         CanonicalReleasePolicy.evaluate(
-            currentVersion: "Development", data: releasePayload(tag: "v1.2.0"),
+            installed: nil, data: releasePayload(tag: "v1.2.0"),
             responseURL: canonicalEndpoint, statusCode: 200
         ) == .unavailable,
         CanonicalReleasePolicy.evaluate(
-            currentVersion: "1.1.0", data: Data("not json".utf8),
+            installed: legacyIdentity("1.1.0"), data: Data("not json".utf8),
             responseURL: canonicalEndpoint, statusCode: 200
         ) == .unavailable,
         CanonicalReleasePolicy.evaluate(
-            currentVersion: "1.1.0", data: releasePayload(tag: "v1.2.0"),
+            installed: legacyIdentity("1.1.0"), data: releasePayload(tag: "v1.2.0"),
             responseURL: canonicalEndpoint, statusCode: 503
         ) == .unavailable else {
-            fputs("self-test failed: canonical release update policy\n", stderr)
+            fputs("self-test failed: canonical release update policy (legacy era)\n", stderr)
+            exit(1)
+        }
+        guard CanonicalReleasePolicy.evaluate(
+            installed: legacyIdentity("1.2.0"), data: calendarRelease,
+            responseURL: canonicalEndpoint, statusCode: 200
+        ) == .available(
+            version: "26.09.06",
+            url: URL(string: "https://github.com/markus-barta/nuncid/releases/tag/v26.09.06")!
+        ), CanonicalReleasePolicy.evaluate(
+            installed: calendarIdentity("26.09.06"), data: calendarRelease,
+            responseURL: canonicalEndpoint, statusCode: 200
+        ) == .current,
+        CanonicalReleasePolicy.evaluate(
+            installed: calendarIdentity("26.09.06"), data: releasePayload(tag: "v1.2.0"),
+            responseURL: canonicalEndpoint, statusCode: 200
+        ) == .current,
+        CanonicalReleasePolicy.evaluate(
+            installed: calendarIdentity("26.09.06"), data: nextSameDayRelease,
+            responseURL: canonicalEndpoint, statusCode: 200
+        ) == .available(
+            version: "26.09.06.10.30.00",
+            url: URL(string: "https://github.com/markus-barta/nuncid/releases/tag/v26.09.06.10.30.00")!
+        ),
+        CanonicalReleasePolicy.evaluate(
+            installed: legacyIdentity("1.2.0"), data: mismatchedMetadata,
+            responseURL: canonicalEndpoint, statusCode: 200
+        ) == .unavailable,
+        CanonicalReleasePolicy.evaluate(
+            installed: legacyIdentity("1.2.0"), data: unknownSchemeMetadata,
+            responseURL: canonicalEndpoint, statusCode: 200
+        ) == .unavailable,
+        CanonicalReleasePolicy.evaluate(
+            installed: legacyIdentity("1.2.0"), data: missingSequenceMetadata,
+            responseURL: canonicalEndpoint, statusCode: 200
+        ) == .unavailable else {
+            fputs("self-test failed: canonical release update policy (calendar era, metadata-discriminated)\n", stderr)
             exit(1)
         }
         guard let catalogueVersion = ReleaseHistory.notes.first?.version else {
@@ -204,6 +330,15 @@ private final class SelfTestAsyncResult: @unchecked Sendable {
         }
         let packagedVersion = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
             ?? catalogueVersion
+        if Bundle.main.bundleIdentifier == "at.markusbarta.glint" {
+            guard let rawScheme = Bundle.main.object(forInfoDictionaryKey: "NuncidVersionScheme") as? String,
+                  let scheme = VersionScheme.parse(rawScheme),
+                  let sequence = Bundle.main.object(forInfoDictionaryKey: "NuncidReleaseSequence") as? Int,
+                  Bundle.main.object(forInfoDictionaryKey: "NuncidReleaseChannel") as? String == ReleaseMigration.channel,
+                  ReleaseIdentity(rawVersion: packagedVersion, scheme: scheme, sequence: sequence) != nil else {
+                fputs("self-test failed: packaged release identity\n", stderr); exit(1)
+            }
+        }
         guard ReleaseHistory.isValid(currentVersion: packagedVersion == "Development" ? catalogueVersion : packagedVersion),
               ReleaseHistory.notes.allSatisfy({ note in
                   note.items.allSatisfy { !$0.label.isEmpty && !$0.detail.isEmpty }

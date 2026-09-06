@@ -13,6 +13,9 @@ plist="$app/Contents/Info.plist"
 
 bundle_version=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$plist")
 [[ "$bundle_version" == "$version" ]] || { print -u2 "Bundle version $bundle_version does not match $version"; exit 1; }
+[[ "$(/usr/libexec/PlistBuddy -c 'Print :NuncidVersionScheme' "$plist")" == legacy ]]
+[[ "$(/usr/libexec/PlistBuddy -c 'Print :NuncidReleaseChannel' "$plist")" == stable ]]
+[[ "$(/usr/libexec/PlistBuddy -c 'Print :NuncidReleaseSequence' "$plist")" == "$(grep -c '^## \[[0-9]' "$repo_dir/CHANGELOG.md")" ]]
 codesign --verify --deep --strict "$app"
 unzip -tq "$archive" >/dev/null
 
