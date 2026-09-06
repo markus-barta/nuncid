@@ -55,6 +55,8 @@ def load(root=ROOT):
     record = json.loads((root / RECORD).read_text())
     if record["version"] != version or record["release_channel"] != "stable":
         raise ValueError("Version/channel metadata mismatch")
+    if any(candidate["version"] == version for candidate in record.get("retired_calendar_candidates", [])):
+        raise ValueError("Retired candidate coordinates cannot be reused")
     sequence = record["release_sequence"]
     if type(sequence) is not int or sequence < 1:
         raise ValueError("Invalid release sequence")

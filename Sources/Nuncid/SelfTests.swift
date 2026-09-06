@@ -93,7 +93,10 @@ private actor ResolverConcurrencyProbe {
         let frame = CGRect(x: -1600, y: -500, width: 1400, height: 900)
         let point = CGPoint(x: -800, y: -60)
         let tiles = ExplorationPolicy.tiles(in: frame, around: point)
-        guard tiles.first?.contains(point) == true,
+        let content = ExplorationPolicy.contentFrame(screen: frame, visible: frame, menuHeight: 32)
+        guard content.maxY == frame.maxY - 32,
+              !content.contains(CGPoint(x: frame.midX, y: frame.maxY - 10)),
+              tiles.first?.contains(point) == true,
               tiles.allSatisfy({ frame.contains($0) }),
               stride(from: frame.minX, to: frame.maxX, by: 30).allSatisfy({ x in
                   stride(from: frame.minY, to: frame.maxY, by: 30).allSatisfy { y in tiles.contains { $0.contains(CGPoint(x: x, y: y)) } }
@@ -552,14 +555,16 @@ private actor ResolverConcurrencyProbe {
             fputs("self-test failed: empty version history catalogue\n", stderr)
             exit(1)
         }
-        let packagedVersion = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
-            ?? catalogueVersion
+        let packagedVersion = NuncidBrand.version == "Development" ? catalogueVersion : NuncidBrand.version
         if Bundle.main.bundleIdentifier == "at.markusbarta.glint" {
             guard let rawScheme = Bundle.main.object(forInfoDictionaryKey: "NuncidVersionScheme") as? String,
                   let scheme = VersionScheme.parse(rawScheme),
                   let sequence = Bundle.main.object(forInfoDictionaryKey: "NuncidReleaseSequence") as? Int,
                   Bundle.main.object(forInfoDictionaryKey: "NuncidReleaseChannel") as? String == ReleaseMigration.channel,
-                  ReleaseIdentity(rawVersion: packagedVersion, scheme: scheme, sequence: sequence) != nil else {
+                  let identity = ReleaseIdentity(rawVersion: packagedVersion, scheme: scheme, sequence: sequence),
+                  let external = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String,
+                  external == (identity.calendar?.macOSShortVersion ?? packagedVersion),
+                  identity.calendar == nil || CalendarVersion.fromMacOSShortVersion(external)?.raw == packagedVersion else {
                 fputs("self-test failed: packaged release identity\n", stderr); exit(1)
             }
         }

@@ -73,6 +73,11 @@ class ReleasePolicyTests(unittest.TestCase):
                 (root / p.RECORD).write_text(json.dumps(dict(record, **{field: value})))
                 with self.assertRaises(ValueError):
                     p.load(root)
+            (root / p.RECORD).write_text(json.dumps(dict(record, retired_calendar_candidates=[{"version": version}])))
+            self.assertEqual(p.load(root)["release_sequence"], 21)
+            (root / p.RECORD).write_text(json.dumps(dict(record, retired_calendar_candidates=[{"version": record["version"]}])))
+            with self.assertRaises(ValueError):
+                p.load(root)
 
 
 if __name__ == "__main__":

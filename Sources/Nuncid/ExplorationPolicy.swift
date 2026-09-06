@@ -80,6 +80,11 @@ enum ExplorationPolicy {
     static let settleDuration: TimeInterval = 0.3
     static let maximumCandidates = 512
 
+    static func contentFrame(screen: CGRect, visible: CGRect, menuHeight: CGFloat) -> CGRect {
+        CGRect(x: screen.minX, y: screen.minY, width: screen.width,
+               height: max(0, screen.height - max(0, menuHeight))).intersection(visible)
+    }
+
     /// Overlapping fixed-size tiles preserve small-text recognition accuracy as
     /// discovery expands. The invoked tile is first, then increasing distance.
     static func tiles(in frame: CGRect, around point: CGPoint) -> [CGRect] {

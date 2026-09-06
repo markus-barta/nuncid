@@ -21,7 +21,7 @@ struct ReleaseNote: Identifiable, Equatable {
 enum ReleaseHistory {
     static let notes: [ReleaseNote] = [
         ReleaseNote(
-            version: "26.09.06.17.55.27",
+            version: "26.09.06.19.36.59",
             isoDate: "2026-09-06",
             date: "6 September 2026",
             theme: "Explore at your own pace",
@@ -32,6 +32,18 @@ enum ReleaseHistory {
                 ReleaseNoteItem(label: "Browse, or deliberately retry", detail: "Scroll through matches and pending IDs. Option + scroll also includes unsuccessful IDs for another try. Outside scrolling gently fades the card and refreshes source markers without discarding context."),
                 ReleaseNoteItem(label: "Simpler controls", detail: "One on-demand exploration action replaces the three activation modes. Tune hover delay and parallel lookups; close the card or press Escape to finish."),
                 ReleaseNoteItem(label: "A date you can trust", detail: "Releases now use UTC calendar coordinates with explicit update metadata. Existing releases keep their identities, and macOS receives a lossless compatible bundle version.")
+            ]
+        ),
+        ReleaseNote(
+            version: "26.09.06.17.55.27",
+            isoDate: "2026-09-06",
+            date: "6 September 2026",
+            theme: "Unpublished validation candidate",
+            headline: "Retired before public delivery.",
+            intro: "The first calendar reservation did not pass every packaged validation gate. It was not published or installed as a release.",
+            items: [
+                ReleaseNoteItem(label: "History stays truthful", detail: "This coordinate remains retired rather than being reused for different bytes."),
+                ReleaseNoteItem(label: "A fresh, verified successor", detail: "The next candidate corrects canonical-version validation while retaining the exploration improvements.")
             ]
         ),
         ReleaseNote(

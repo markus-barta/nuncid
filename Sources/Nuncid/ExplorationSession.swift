@@ -332,7 +332,9 @@ private final class ExplorationMarkerView: NSView {
         }
         let current = LookupSourceSnapshot.capture()
         if current?.processIdentifier != ProcessInfo.processInfo.processIdentifier, sourceIsOnDisplay(current) { source = current }
-        tiles = ExplorationPolicy.tiles(in: screen.visibleFrame, around: focus)
+        let content = ExplorationPolicy.contentFrame(screen: screen.frame, visible: screen.visibleFrame,
+            menuHeight: max(NSStatusBar.system.thickness, screen.safeAreaInsets.top))
+        tiles = ExplorationPolicy.tiles(in: content, around: focus)
         let generation = geometryGeneration
         let foreground = sourceIsOnDisplay(current) ? ForegroundApplicationContext.capture() : nil
         let context = ResolutionContext.load()

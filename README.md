@@ -1,9 +1,9 @@
 <p align="center">
-  <img src="docs/screenshots/hero-26.09.06.17.55.27.png" alt="Nuncid — point at a ticket and know what matters" width="100%">
+  <img src="docs/screenshots/hero-26.09.06.19.36.59.png" alt="Nuncid — point at a ticket and know what matters" width="100%">
 </p>
 
 <p align="center">
-  <a href="https://github.com/markus-barta/nuncid/releases/latest"><img src="https://img.shields.io/badge/release-26.09.06.17.55.27-0A84FF?style=flat-square" alt="Latest release 26.09.06.17.55.27"></a>
+  <a href="https://github.com/markus-barta/nuncid/releases/latest"><img src="https://img.shields.io/badge/release-26.09.06.19.36.59-0A84FF?style=flat-square" alt="Latest release 26.09.06.19.36.59"></a>
   <img src="https://img.shields.io/badge/macOS-13%2B-111827?style=flat-square&logo=apple" alt="macOS 13 or newer">
   <img src="https://img.shields.io/badge/Swift-5.10-F05138?style=flat-square&logo=swift&logoColor=white" alt="Swift 5.10">
   <img src="https://img.shields.io/badge/OCR-local-22C55E?style=flat-square" alt="Local OCR">
@@ -29,7 +29,7 @@
 Invoke Nuncid to start an **on-demand exploration session**. Apple Vision discovers ticket keys and numbers progressively outward from the pointer over the invoked display. Nearby candidates resolve first through your existing Paimos and GitHub sessions; hovering prioritizes a pending ID and opens its cached card. Nothing scans while the session is idle.
 
 <p align="center">
-  <img src="docs/screenshots/workflow-26.09.06.17.55.27.png" alt="Nuncid keeps the current ticket fixed between previous and next results" width="100%">
+  <img src="docs/screenshots/workflow-26.09.06.19.36.59.png" alt="Nuncid keeps the current ticket fixed between previous and next results" width="100%">
 </p>
 
 | Invoke anywhere | Keep context nearby | Navigate without friction |
@@ -47,7 +47,7 @@ The pinned header keeps its grab handle, pin state, and result position centered
 The active source remains emphasized for as long as its card is visible. All candidates are marked during exploration—there is no pinned-only visibility switch. A pending selection shows “Checking…” rather than inventing ticket content.
 
 <p align="center">
-  <img src="docs/screenshots/lookup-highlight-26.09.06.17.55.27.png" alt="Nuncid exploration distinguishes queued, checking, matched, and unsuccessful source IDs" width="100%">
+  <img src="docs/screenshots/lookup-highlight-26.09.06.19.36.59.png" alt="Nuncid exploration distinguishes queued, checking, matched, and unsuccessful source IDs" width="100%">
 </p>
 
 Markers ignore mouse input, do not animate, and remain excluded from screen capture. Source scrolling or window/Space changes invalidate stale coordinates immediately. After a short settling delay, Nuncid rediscovers visible IDs and reanchors their markers while keeping the card and cached results. Off-screen IDs lose only their outline.
@@ -63,7 +63,7 @@ Settings now expose the shortcut, **hover delay (default 100 ms, 0–500 ms)** a
 | <img src="docs/screenshots/menu-hover-off-0.3.2.png" alt="Dimmed Nuncid menu bar icon: hover is off" width="40"> | <img src="docs/screenshots/menu-hover-on-0.3.2.png" alt="Filled viewfinder menu bar icon: hover is on" width="40"> | <img src="docs/screenshots/menu-ticket-found-0.3.2.png" alt="Checkmark menu bar icon: ticket found" width="40"> |
 
 <p align="center">
-  <img src="docs/screenshots/settings-showcase-26.09.06.17.55.27.png" alt="Nuncid activation and spatial card appearance settings" width="100%">
+  <img src="docs/screenshots/settings-showcase-26.09.06.19.36.59.png" alt="Nuncid activation and spatial card appearance settings" width="100%">
 </p>
 
 Nuncid can show zero to six neighboring destinations and offers four text sizes, three presets plus a remembered Custom size, three content densities, and system or solid surfaces. Pinned Card settings retain the global scroll modifier and direct-entry controls. Cards adapt their content to the available space instead of forcing every ticket into the same dimensions.
@@ -73,7 +73,7 @@ Nuncid can show zero to six neighboring destinations and offers four text sizes,
 The app’s **Version History** explains each release in concise, positive human language. Open it from the menu, About window, or by clicking the version in Settings; your running version is always highlighted.
 
 <p align="center">
-  <img src="docs/screenshots/version-history-26.09.06.17.55.27.png" alt="Nuncid Version History with the current release highlighted and benefit-led notes" width="100%">
+  <img src="docs/screenshots/version-history-26.09.06.19.36.59.png" alt="Nuncid Version History with the current release highlighted and benefit-led notes" width="100%">
 </p>
 
 ## Smarter resolution, fewer wrong guesses
@@ -178,7 +178,10 @@ offered as an update. This check links to downloads; it does not install them.
 The first calendar coordinate is **26.09.06.17.55.27**, sequence **20**, reserved
 once in UTC. `VERSION` is authoritative; `Sources/Nuncid/Resources/Release.json`
 is its consistency-checked runtime metadata mirror and pins the migration anchor.
-Legacy parsing stays supported until a separately approved closeout.
+That first reservation was retired after a packaged self-test failure and was
+never published or installed. The successor is **26.09.06.19.36.59**, sequence
+**21**; the retired ordinal remains recorded rather than reused. Legacy parsing
+stays supported until a separately approved closeout.
 
 macOS requires a three-numeric-component `CFBundleShortVersionString`. Its local
 compatibility representation is `YYYY.(100×MM+DD).T`, where `T` is zero for a

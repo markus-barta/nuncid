@@ -2,7 +2,13 @@
 
 ## [Unreleased]
 
+## [26.09.06.19.36.59] - 2026-09-06
+
+- Explore screen references on demand, with subtle status badges, hover-prioritized lookups, and verified calendar-version packaging.
+
 ## [26.09.06.17.55.27] - 2026-09-06
+
+**Unpublished validation candidate — retired.** Packaged self-tests still read the macOS compatibility version as the canonical identity. This coordinate will not be reused; no release was published or installed from it.
 
 - Explore ticket IDs progressively, prioritize pending lookups, retry misses with Option + scroll, and adopt explicit calendar release identities.
 

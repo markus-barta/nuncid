@@ -1,10 +1,19 @@
 {
   "version_scheme": "inspr-calendar-v1",
-  "version": "26.09.06.17.55.27",
+  "version": "26.09.06.19.36.59",
   "release_channel": "stable",
-  "release_sequence": 20,
-  "bundle_short_version": "2026.906.64528",
+  "release_sequence": 21,
+  "bundle_short_version": "2026.906.70620",
   "last_legacy_version": "1.2.3",
   "first_calendar_version": "26.09.06.17.55.27",
-  "first_calendar_sequence": 20
+  "first_calendar_sequence": 20,
+  "retired_calendar_candidates": [
+    {
+      "version": "26.09.06.17.55.27",
+      "release_sequence": 20,
+      "reason": "Packaged self-test read the macOS compatibility value as the canonical version",
+      "source_commit": "46562f9a41f0ed9838e5fc32315a014afee713b0",
+      "ci_run": 34055006645
+    }
+  ]
 }

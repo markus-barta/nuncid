@@ -31,18 +31,20 @@ jobs:
           if [[ "$previous" != "$current" ]]; then echo 'changed=true' >> "$GITHUB_OUTPUT"; fi
 
       - name: Package release candidate once
+        id: package
         if: steps.reservation.outputs.changed == 'true'
         run: ./scripts/package-release.sh
 
       - name: Verify packaged release
+        id: verify
         if: steps.reservation.outputs.changed == 'true'
         run: ./scripts/verify-release.sh
 
-      - name: Retain exact candidate bytes for promotion
-        if: steps.reservation.outputs.changed == 'true'
+      - name: Retain exact candidate bytes and failure evidence
+        if: always() && steps.package.outcome == 'success'
         uses: actions/upload-artifact@v4
         with:
-          name: nuncid-release-candidate
+          name: ${{ steps.verify.outcome == 'success' && 'nuncid-release-candidate' || 'nuncid-failed-candidate' }}
           path: |
             dist/Nuncid-*.zip
             dist/Nuncid-*.sha256
