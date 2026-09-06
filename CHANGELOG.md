@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+## [1.2.1] - 2026-09-06
+
+- Prepare update checks for future calendar releases with explicit metadata and a safe legacy bridge.
+
 ## [1.2.0] - 2026-08-31
 
 - Make left-click scan once, keep settings on right-click, and show installed/update status in the menu.

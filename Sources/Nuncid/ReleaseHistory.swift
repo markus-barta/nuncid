@@ -21,6 +21,19 @@ struct ReleaseNote: Identifiable, Equatable {
 enum ReleaseHistory {
     static let notes: [ReleaseNote] = [
         ReleaseNote(
+            version: "1.2.1",
+            isoDate: "2026-09-06",
+            date: "6 September 2026",
+            theme: "Ready for the next release",
+            headline: "Keep finding updates as Nuncid grows.",
+            intro: "This compatibility release prepares Nuncid to recognize future date-based releases while keeping the familiar version format today.",
+            items: [
+                ReleaseNoteItem(label: "A safe stepping stone", detail: "Install 1.2.1 before moving to calendar versions. Older builds can discover this update using their existing version checker."),
+                ReleaseNoteItem(label: "Explicit update information", detail: "Future date-based updates must carry valid release metadata; missing or inconsistent information never becomes an update suggestion."),
+                ReleaseNoteItem(label: "History stays intact", detail: "Existing releases keep their original versions, and the update checker never suggests an older release as an upgrade.")
+            ]
+        ),
+        ReleaseNote(
             version: "1.2.0",
             isoDate: "2026-08-31",
             date: "31 August 2026",

@@ -50,6 +50,21 @@ import SwiftUI
             ?? (try? String(contentsOfFile: "VERSION", encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines))
             ?? "Development"
     }
+
+    /// Explicit version-scheme metadata for this build. Packaged builds carry
+    /// it in Info.plist; when it is absent the result is nil and the update
+    /// check fails closed rather than guessing from the version string.
+    static var versionScheme: VersionScheme? {
+        if let raw = Bundle.main.object(forInfoDictionaryKey: "NuncidVersionScheme") as? String {
+            return VersionScheme.parse(raw)
+        }
+#if DEBUG
+        if version != "Development", let classified = ReleaseIdentity.unclassified(version) {
+            return classified.scheme
+        }
+#endif
+        return nil
+    }
 }
 
 @MainActor final class AppState: ObservableObject {

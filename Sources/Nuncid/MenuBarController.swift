@@ -93,14 +93,76 @@ enum MenuUpdateHeaderPolicy {
 private struct GitHubReleasePayload: Decodable {
     let tagName: String
     let htmlURL: String
+    let body: String?
     let draft: Bool
     let prerelease: Bool
 
     private enum CodingKeys: String, CodingKey {
         case tagName = "tag_name"
         case htmlURL = "html_url"
+        case body
         case draft
         case prerelease
+    }
+}
+
+/// Machine-readable release metadata carried in the release body. Releases
+/// published before the calendar migration have no block; their era comes
+/// from the migration anchor, not from punctuation. Unknown blocks fail
+/// closed.
+struct ReleaseMetadata: Equatable, Sendable {
+    static let marker = "<!-- nuncid-release-metadata"
+
+    let scheme: VersionScheme
+    let version: String
+    let channel: String
+    let sequence: Int
+
+    static func parse(_ body: String?) -> ReleaseMetadata? {
+        guard let body else { return nil }
+        guard body.components(separatedBy: marker).count == 2 else { return nil }
+        var lines: [String] = []
+        var inBlock = false
+        var closed = false
+        for line in body.components(separatedBy: "\n") {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if inBlock, trimmed == "-->" { closed = true; break }
+            if trimmed == marker {
+                inBlock = true
+                continue
+            }
+            if inBlock { lines.append(trimmed) }
+        }
+        guard closed, !lines.isEmpty else { return nil }
+        var scheme: String?
+        var version: String?
+        var channel: String?
+        var sequence: String?
+        for line in lines where !line.isEmpty {
+            guard let colon = line.firstIndex(of: ":") else { return nil }
+            let key = line[line.startIndex..<colon].trimmingCharacters(in: .whitespaces)
+            let value = line[line.index(after: colon)...].trimmingCharacters(in: .whitespaces)
+            guard !value.isEmpty else { return nil }
+            switch key {
+            case "version-scheme": guard scheme == nil else { return nil }; scheme = value
+            case "version": guard version == nil else { return nil }; version = value
+            case "release-channel": guard channel == nil else { return nil }; channel = value
+            case "release-sequence":
+                guard sequence == nil,
+                      value.allSatisfy({ $0.isASCII && $0.isNumber }),
+                      (value.count == 1 || value.first != "0"),
+                      let parsed = Int(value),
+                      parsed >= 1 else { return nil }
+                sequence = value
+            default: return nil
+            }
+        }
+        guard let scheme,
+              let parsedScheme = VersionScheme.parse(scheme),
+              let version,
+              let channel, channel == ReleaseMigration.channel,
+              let sequence else { return nil }
+        return ReleaseMetadata(scheme: parsedScheme, version: version, channel: channel, sequence: Int(sequence) ?? 1)
     }
 }
 
@@ -108,30 +170,35 @@ enum CanonicalReleasePolicy {
     static let endpoint = URL(string: "https://api.github.com/repos/markus-barta/nuncid/releases/latest")!
 
     static func evaluate(
-        currentVersion: String,
+        installed: ReleaseIdentity?,
         data: Data,
         responseURL: URL?,
         statusCode: Int
     ) -> AppUpdateState {
+        guard let installed else { return .unavailable }
         guard statusCode == 200,
               isExactEndpoint(responseURL),
-              let current = SemanticVersion(currentVersion),
               let payload = try? JSONDecoder().decode(GitHubReleasePayload.self, from: data),
               !payload.draft,
               !payload.prerelease,
-              let release = releaseVersion(from: payload.tagName),
+              let release = releaseIdentity(from: payload.tagName, body: payload.body),
               let releaseURL = URL(string: payload.htmlURL),
               isCanonicalReleaseURL(releaseURL, tag: payload.tagName) else {
             return .unavailable
         }
-        guard release > current else { return .current }
+        guard let isNewer = release.isNewerThan(installed) else { return .unavailable }
+        guard isNewer else { return .current }
         return .available(version: payload.tagName.hasPrefix("v") ? String(payload.tagName.dropFirst()) : payload.tagName, url: releaseURL)
     }
 
-    private static func releaseVersion(from tag: String) -> SemanticVersion? {
+    private static func releaseIdentity(from tag: String, body: String?) -> ReleaseIdentity? {
         let rawVersion = tag.hasPrefix("v") ? String(tag.dropFirst()) : tag
         guard !rawVersion.isEmpty, tag == rawVersion || tag == "v\(rawVersion)" else { return nil }
-        return SemanticVersion(rawVersion)
+        if body?.contains("nuncid-release-metadata") == true {
+            guard let metadata = ReleaseMetadata.parse(body), metadata.version == rawVersion else { return nil }
+            return ReleaseIdentity(rawVersion: rawVersion, scheme: metadata.scheme, sequence: metadata.sequence)
+        }
+        return ReleaseIdentity.unclassified(rawVersion)
     }
 
     static func isExactEndpoint(_ url: URL?) -> Bool {
@@ -196,7 +263,8 @@ struct BoundedResponseAccumulator {
 }
 
 enum CanonicalReleaseChecker {
-    static func check(currentVersion: String) async -> AppUpdateState {
+    static func check(installed: ReleaseIdentity?) async -> AppUpdateState {
+        guard let installed else { return .unavailable }
         let configuration = URLSessionConfiguration.ephemeral
         configuration.timeoutIntervalForRequest = 4
         configuration.timeoutIntervalForResource = 5
@@ -215,7 +283,7 @@ enum CanonicalReleaseChecker {
         var request = URLRequest(url: CanonicalReleasePolicy.endpoint)
         request.httpMethod = "GET"
         request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
-        request.setValue("Nuncid/\(currentVersion)", forHTTPHeaderField: "User-Agent")
+        request.setValue("Nuncid/\(installed.rawVersion)", forHTTPHeaderField: "User-Agent")
         request.setValue("2022-11-28", forHTTPHeaderField: "X-GitHub-Api-Version")
         do {
             let (bytes, response) = try await session.bytes(for: request)
@@ -231,7 +299,7 @@ enum CanonicalReleaseChecker {
                 guard body.append(byte) else { return .unavailable }
             }
             return CanonicalReleasePolicy.evaluate(
-                currentVersion: currentVersion,
+                installed: installed,
                 data: body.data,
                 responseURL: response.url,
                 statusCode: response.statusCode
@@ -393,8 +461,12 @@ enum CanonicalReleaseChecker {
         if showCheckingState { updateState = .checking }
         lastUpdateCheckAt = Date()
         let currentVersion = NuncidBrand.version
+        let installed = NuncidBrand.versionScheme.flatMap {
+            ReleaseIdentity(rawVersion: currentVersion, scheme: $0,
+                            sequence: Bundle.main.object(forInfoDictionaryKey: "NuncidReleaseSequence") as? Int)
+        }
         updateTask = Task { [weak self] in
-            let result = await CanonicalReleaseChecker.check(currentVersion: currentVersion)
+            let result = await CanonicalReleaseChecker.check(installed: installed)
             guard !Task.isCancelled else { return }
             self?.updateState = result
         }
