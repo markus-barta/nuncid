@@ -16,6 +16,49 @@ private final class SelfTestAsyncResult: @unchecked Sendable {
 }
 
 @MainActor enum SelfTests {
+    private static func verifyMenuBarTargetSelection() {
+        let start = Date(timeIntervalSince1970: 1_000)
+        let target = CGPoint(x: 400, y: 300)
+        let secondScreen = CGRect(x: 2000, y: -400, width: 1000, height: 800)
+        guard !MenuBarTargetSelection.isContent(position: CGPoint(x: 2400, y: 390), screenFrame: secondScreen, menuHeight: 33),
+              MenuBarTargetSelection.isContent(position: CGPoint(x: 2400, y: 350), screenFrame: secondScreen, menuHeight: 33),
+              !MenuBarTargetSelection.isContent(position: target, screenFrame: secondScreen, menuHeight: 33) else {
+            fputs("self-test failed: menu-bar exclusion on offset/notched displays\n", stderr); exit(1)
+        }
+        var selection = MenuBarTargetSelection(now: start)
+        func time(_ offset: TimeInterval) -> Date { start.addingTimeInterval(offset) }
+        guard selection.update(position: .zero, eligible: false, now: time(0)) == .waiting,
+              selection.update(position: .zero, eligible: false, now: time(2), clicked: true) == .waiting,
+              selection.update(position: target, eligible: true, now: time(3)) == .waiting,
+              selection.update(position: target, eligible: true, now: time(3.2)) == .waiting,
+              selection.update(position: target, eligible: true, now: time(3.4)) == .scan(target),
+              selection.update(position: target, eligible: true, now: time(3.5), clicked: true) == .cancelled else {
+            fputs("self-test failed: menu selection waits outside bars, dwells, scans exactly once\n", stderr); exit(1)
+        }
+        var click = MenuBarTargetSelection(now: start)
+        guard click.update(position: target, eligible: true, now: time(0.1), clicked: true) == .scan(target),
+              click.update(position: target, eligible: true, now: time(1)) == .cancelled else {
+            fputs("self-test failed: menu target click consumes one selection\n", stderr); exit(1)
+        }
+        var movement = MenuBarTargetSelection(now: start)
+        let moved = CGPoint(x: 420, y: 300)
+        guard movement.update(position: target, eligible: true, now: time(0)) == .waiting,
+              movement.update(position: moved, eligible: true, now: time(0.2)) == .waiting,
+              movement.update(position: moved, eligible: true, now: time(0.4)) == .waiting,
+              movement.update(position: moved, eligible: false, now: time(0.5)) == .waiting,
+              movement.update(position: moved, eligible: true, now: time(0.6)) == .waiting,
+              movement.update(position: moved, eligible: true, now: time(1)) == .scan(moved) else {
+            fputs("self-test failed: movement and re-entering a menu bar reset target dwell\n", stderr); exit(1)
+        }
+        var expired = MenuBarTargetSelection(now: start)
+        var revoked = MenuBarTargetSelection(now: start)
+        guard expired.update(position: target, eligible: true, now: time(15), clicked: true) == .cancelled,
+              revoked.update(position: target, eligible: true, now: time(0.1), clicked: true,
+                             permissionGranted: false) == .cancelled else {
+            fputs("self-test failed: selection timeout and permission loss cancel before scanning\n", stderr); exit(1)
+        }
+    }
+
     private static func verifyMenuBarIconPresentation() {
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         defer { NSStatusBar.system.removeStatusItem(item) }
@@ -55,6 +98,7 @@ private final class SelfTestAsyncResult: @unchecked Sendable {
 
     static func runAndExit() -> Never {
         verifyMenuBarIconPresentation()
+        verifyMenuBarTargetSelection()
         let tokens = TokenParser.parse([
             "HAUSV-578 PAI-843 START-186 PHAROS-203 JANUS-455",
             "collision #130 bare 130 release 0.99.12",
@@ -588,6 +632,7 @@ private final class SelfTestAsyncResult: @unchecked Sendable {
         ), !QueuedScanLifecyclePolicy.shouldLaunch(
             queuedGeneration: 8, currentGeneration: 8, completedGeneration: 8
         ), QueuedScanLifecyclePolicy.shouldRetargetAfterPointerMovement(source: .explicitCommand),
+           !QueuedScanLifecyclePolicy.shouldRetargetAfterPointerMovement(source: .menuTarget),
            !QueuedScanLifecyclePolicy.shouldRetargetAfterPointerMovement(source: .automaticHover) else {
             fputs("self-test failed: queued scan generation lifecycle\n", stderr); exit(1)
         }
@@ -622,7 +667,9 @@ private final class SelfTestAsyncResult: @unchecked Sendable {
               !lateNoMatchCompletion else {
             fputs("self-test failed: pinned input owns late scan results/no-match\n", stderr); exit(1)
         }
-        guard ScanCuePolicy.showsInvoked(for: .explicitCommand),
+        guard ScanCuePolicy.showsInvoked(for: .menuTarget),
+              ScanCuePolicy.terminal(for: .menuTarget, hasResolvedResult: false) == .noMatch,
+              ScanCuePolicy.showsInvoked(for: .explicitCommand),
               !ScanCuePolicy.showsInvoked(for: .automaticHover),
               ScanCuePolicy.terminal(for: .explicitCommand, hasResolvedResult: false) == .noMatch,
               ScanCuePolicy.terminal(for: .automaticHover, hasResolvedResult: false) == .none,

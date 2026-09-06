@@ -86,15 +86,15 @@ struct CalendarVersion: Equatable, Comparable, Sendable {
 /// SemVer comparison, lexical guesswork, or coercion of calendar fields.
 enum ReleaseMigration {
     static let channel = "stable"
-    static let lastLegacyVersion = "1.2.2"
+    static let lastLegacyVersion = "1.2.3"
     // Lower bound, NOT a reserved first-calendar coordinate. The bridge is
     // still SemVer; the calendar candidate must record its actual reservation.
     static let calendarNotBefore = "26.09.06"
-    static let firstCalendarSequence = 19
+    static let firstCalendarSequence = 20
     static let legacyVersions = [
         "0.1.0", "0.2.0", "0.2.1", "0.2.2", "0.3.0", "0.3.1",
         "0.3.2", "0.3.3", "0.4.0", "0.5.0", "0.5.1", "0.5.2",
-        "0.5.3", "1.0.0", "1.1.0", "1.2.0", "1.2.1", "1.2.2"
+        "0.5.3", "1.0.0", "1.1.0", "1.2.0", "1.2.1", "1.2.2", "1.2.3"
     ]
 }
 

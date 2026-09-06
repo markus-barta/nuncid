@@ -2,7 +2,8 @@ import AppKit
 import Combine
 
 enum MenuBarScanOutcome: Equatable {
-    case started
+    case armed
+    case cancelled
     case permissionRequired
 }
 
@@ -380,14 +381,17 @@ enum CanonicalReleaseChecker {
     private func scanOnce(from button: NSStatusBarButton) {
         let outcome = state.performMenuBarScan()
         switch outcome {
-        case .started:
-            scanFeedback.show(message: "Scanning near pointer…", anchoredTo: button)
+        case .armed:
+            scanFeedback.show(message: "Point at an ID, or click it…", anchoredTo: button)
+        case .cancelled:
+            scanFeedback.show(message: "Scan cancelled", anchoredTo: button)
         case .permissionRequired:
             scanFeedback.show(message: "Screen Recording required", anchoredTo: button)
         }
     }
 
     private func openMenu(from button: NSStatusBarButton) {
+        state.cancelMenuBarScan()
         if Date().timeIntervalSince(lastUpdateCheckAt) >= 15 * 60 {
             beginUpdateCheck(showCheckingState: false)
         }
@@ -508,7 +512,7 @@ enum CanonicalReleaseChecker {
     func captureScanFeedbackProbe(to url: URL) {
         guard let button = statusItem.button else { Darwin.exit(1) }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [scanFeedback] in
-            scanFeedback.captureProbe(message: "Scanning near pointer…", anchoredTo: button, to: url)
+            scanFeedback.captureProbe(message: "Point at an ID, or click it…", anchoredTo: button, to: url)
         }
     }
 #endif
@@ -560,7 +564,7 @@ enum CanonicalReleaseChecker {
     }
 
     private func makePanel(message: String, reduceMotion: Bool) -> NSPanel {
-        let size = NSSize(width: 238, height: 58)
+        let size = NSSize(width: 280, height: 58)
         let panel = MenuBarScanFeedbackPanel(
             contentRect: NSRect(origin: .zero, size: size),
             styleMask: [.borderless, .nonactivatingPanel],
@@ -655,7 +659,7 @@ enum MenuBarClickRoutingProbe {
         guard scans == 1, menus == 0 else { Darwin.exit(1) }
         MenuBarClickRouter.route(.right, scanOnce: { scans += 1 }, openMenu: { menus += 1 })
         guard scans == 1, menus == 1 else { Darwin.exit(1) }
-        print("menu click routing probe passed: left=1 scan, right=0 scans")
+        print("menu click routing probe passed: left=1 target-selection request, right=0 scans")
         Darwin.exit(0)
     }
 }

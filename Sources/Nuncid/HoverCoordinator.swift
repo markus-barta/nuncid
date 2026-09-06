@@ -18,12 +18,13 @@ enum QueuedScanLifecyclePolicy {
 
 enum ScanInvocationSource: Equatable {
     case explicitCommand
+    case menuTarget
     case automaticHover
 }
 
 enum ScanCuePolicy {
     static func showsInvoked(for source: ScanInvocationSource) -> Bool {
-        source == .explicitCommand
+        source != .automaticHover
     }
 
     static func terminal(
@@ -34,7 +35,7 @@ enum ScanCuePolicy {
         // the persistent lock-on. A second terminal panel would be replaced
         // in the same run-loop turn and never become visible.
         if hasResolvedResult { return .none }
-        return source == .explicitCommand ? .noMatch : .none
+        return source != .automaticHover ? .noMatch : .none
     }
 }
 
@@ -169,6 +170,9 @@ enum LookupHighlightVisibilityPolicy {
         let invokedFeedbackShown: Bool
     }
     private var pendingManualScan: PendingManualScan?
+    private var menuTargetSelection: MenuBarTargetSelection?
+    private var menuTargetClickMonitor: Any?
+    private var menuTargetGeneration = 0
     private struct ManualInspectionState {
         let anchor: CGPoint
         let startedAt: Date
@@ -234,6 +238,7 @@ enum LookupHighlightVisibilityPolicy {
     }
 
     func resetHoverActivation() {
+        cancelMenuTargetSelection()
         scanGeneration += 1
         activeScanTask?.cancel()
         pendingManualScan = nil
@@ -248,7 +253,71 @@ enum LookupHighlightVisibilityPolicy {
         appState?.activity = "Ready"
     }
 
-    func performInspectCommand() {
+    /// Status-item invocation arms a target instead of capturing the status bar.
+    func toggleMenuTargetSelection() -> Bool {
+        if menuTargetSelection != nil {
+            cancelMenuTargetSelection()
+            return false
+        }
+        scanGeneration += 1
+        activeScanTask?.cancel()
+        pendingManualScan = nil
+        clearManualInspection()
+        clearLookupHighlight()
+        if !overlay.isSticky { overlay.hide() }
+        menuTargetGeneration += 1
+        let generation = menuTargetGeneration
+        menuTargetSelection = MenuBarTargetSelection(now: Date())
+        appState?.activity = "Point at an ID, or click it · Click Nuncid again to cancel"
+        // Mouse-only, passive observation: never swallow a target-app click or
+        // request keyboard monitoring. Dwell works even without this monitor.
+        menuTargetClickMonitor = NSEvent.addGlobalMonitorForEvents(matching: .leftMouseDown) { [weak self] _ in
+            let position = NSEvent.mouseLocation
+            Task { @MainActor in
+                guard let self, self.menuTargetGeneration == generation else { return }
+                _ = self.advanceMenuTargetSelection(at: position, clicked: true)
+            }
+        }
+        return true
+    }
+
+    func cancelMenuTargetSelection() {
+        guard menuTargetSelection != nil else { return }
+        menuTargetSelection = nil
+        menuTargetGeneration += 1
+        if let monitor = menuTargetClickMonitor { NSEvent.removeMonitor(monitor) }
+        menuTargetClickMonitor = nil
+        lastPosition = NSEvent.mouseLocation
+        stableSince = Date()
+        appState?.activity = "Ready"
+    }
+
+    private func advanceMenuTargetSelection(at position: CGPoint, clicked: Bool = false) -> Bool {
+        guard var selection = menuTargetSelection else { return false }
+        let inContent = NSScreen.screens.contains { screen in
+            let menuHeight = max(NSStatusBar.system.thickness, screen.frame.maxY - screen.visibleFrame.maxY)
+            return MenuBarTargetSelection.isContent(position: position, screenFrame: screen.frame,
+                                                     menuHeight: menuHeight)
+        }
+        let overOwnWindow = NSApp.windows.contains { $0.isVisible && $0.frame.contains(position) }
+        let decision = selection.update(position: position, eligible: inContent && !overOwnWindow,
+                                        now: Date(), clicked: clicked,
+                                        permissionGranted: appState?.screenRecordingGranted == true)
+        menuTargetSelection = selection
+        switch decision {
+        case .waiting: break
+        case .cancelled: cancelMenuTargetSelection()
+        case let .scan(target):
+            cancelMenuTargetSelection() // Consume ownership before OCR or another mouse event.
+            performInspectCommand(at: target)
+        }
+        return true
+    }
+
+    func performInspectCommand(at target: CGPoint? = nil) {
+        cancelMenuTargetSelection()
+        let position = target ?? NSEvent.mouseLocation
+        let source: ScanInvocationSource = target == nil ? .explicitCommand : .menuTarget
         guard appState?.screenRecordingGranted == true else {
             appState?.requestScreenRecording(); return
         }
@@ -258,7 +327,6 @@ enum LookupHighlightVisibilityPolicy {
         if isScanning {
             scanGeneration += 1
             activeScanTask?.cancel()
-            let position = NSEvent.mouseLocation
             clearLookupHighlight()
             let showsFeedback = appState?.activationPreferences.scanFeedbackEnabled == true
             if showsFeedback { scanFeedback.invoked(at: position) }
@@ -266,7 +334,7 @@ enum LookupHighlightVisibilityPolicy {
                 position: position,
                 presentation: presentation,
                 generation: scanGeneration,
-                source: .explicitCommand,
+                source: source,
                 invokedFeedbackShown: showsFeedback
             )
             if presentation == .pinned { overlay.showPinnedStatus("Reading near pointer…") }
@@ -274,14 +342,15 @@ enum LookupHighlightVisibilityPolicy {
         }
         scanGeneration += 1
         _ = trigger(
-            at: NSEvent.mouseLocation,
+            at: position,
             presentation: presentation,
-            source: .explicitCommand,
+            source: source,
             requiresStablePointer: false
         )
     }
 
     func performPinCommand() {
+        cancelMenuTargetSelection()
         let state: PanelInteractionState = overlay.isSticky
             ? (overlay.isActive ? .pinnedActive : .pinnedInactive)
             : (overlay.isVisible ? .temporary : .hidden)
@@ -346,6 +415,7 @@ enum LookupHighlightVisibilityPolicy {
                     scanGeneration += 1
                     activeScanTask?.cancel()
                     pendingManualScan = nil
+                    cancelMenuTargetSelection()
                     clearManualInspection()
                     clearLookupHighlight()
                     if !overlay.isSticky { overlay.hide() }
@@ -354,6 +424,7 @@ enum LookupHighlightVisibilityPolicy {
             }
             lastPermissionPollAt = Date()
         }
+        if advanceMenuTargetSelection(at: NSEvent.mouseLocation) { return }
         validateLookupSourceIfNeeded()
         if overlay.isSticky {
             // Sticky presentation owns its own local Escape handling and must

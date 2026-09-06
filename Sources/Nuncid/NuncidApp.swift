@@ -227,6 +227,7 @@ import SwiftUI
     func resetAppearance() { presentationPreferences = .defaults }
 
     func performActivationCommand() {
+        coordinator.cancelMenuTargetSelection()
         switch ActivationShortcutPolicy.action(for: activationPreferences.mode) {
         case .none:
             activity = "Scanning off"
@@ -246,8 +247,8 @@ import SwiftUI
         }
     }
 
-    /// A status-item click is a direct, one-shot command. It deliberately bypasses
-    /// the saved shortcut mode so it cannot toggle hover or rewrite preferences.
+    /// A status-item click arms one target selection. Shortcuts remain immediate;
+    /// neither path toggles hover or rewrites preferences.
     @discardableResult
     func performMenuBarScan() -> MenuBarScanOutcome {
         guard screenRecordingGranted else {
@@ -255,9 +256,10 @@ import SwiftUI
             requestScreenRecording()
             return .permissionRequired
         }
-        coordinator.performInspectCommand()
-        return .started
+        return coordinator.toggleMenuTargetSelection() ? .armed : .cancelled
     }
+
+    func cancelMenuBarScan() { coordinator.cancelMenuTargetSelection() }
 
     func setHoverMatchFound(_ found: Bool) {
         hoverMatchFound = activationPreferences.mode == .toggleHover && hoverScanningEnabled && found
