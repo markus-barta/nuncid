@@ -21,6 +21,19 @@ struct ReleaseNote: Identifiable, Equatable {
 enum ReleaseHistory {
     static let notes: [ReleaseNote] = [
         ReleaseNote(
+            version: "1.2.2",
+            isoDate: "2026-09-06",
+            date: "6 September 2026",
+            theme: "At home in your menu bar",
+            headline: "A clear icon, in light or dark.",
+            intro: "Nuncid now lets macOS choose the menu-bar icon color, just like native status items, instead of borrowing a text color from the app.",
+            items: [
+                ReleaseNoteItem(label: "Native contrast", detail: "The icon stays readable against light and dark menu bars and follows the system when the appearance changes."),
+                ReleaseNoteItem(label: "Familiar state shapes", detail: "Hover scanning and found tickets keep their distinct symbols, with native monochrome rendering and menu highlighting."),
+                ReleaseNoteItem(label: "Your controls, unchanged", detail: "Left-click still scans once; right-click still opens Settings and controls. Shortcuts and preferences stay as you set them.")
+            ]
+        ),
+        ReleaseNote(
             version: "1.2.1",
             isoDate: "2026-09-06",
             date: "6 September 2026",

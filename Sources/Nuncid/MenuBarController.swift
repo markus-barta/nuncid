@@ -500,35 +500,8 @@ enum CanonicalReleaseChecker {
         matchFound: Bool
     ) {
         guard let button = statusItem.button else { return }
-        let resolved = HoverMenuBarState.resolve(
-            mode: mode,
-            hoverEnabled: hoverEnabled,
-            matchFound: matchFound
-        )
-        switch resolved {
-        case .matchFound:
-            button.image = NSImage(systemSymbolName: "checkmark.circle.fill", accessibilityDescription: nil)
-            button.contentTintColor = .systemGreen
-            button.setAccessibilityLabel("Nuncid, hover on, ticket found")
-        case .active:
-            button.image = NSImage(systemSymbolName: "viewfinder.circle.fill", accessibilityDescription: nil)
-            button.contentTintColor = .controlAccentColor
-            button.setAccessibilityLabel("Nuncid, hover on")
-        case .inactive:
-            button.image = NuncidBrand.menuBarIcon
-            button.contentTintColor = mode == .pressToScan ? .labelColor : .secondaryLabelColor
-            let label = mode == .off
-                ? "Nuncid, scanning off. Left-click to scan once; right-click for Settings."
-                : (mode == .pressToScan
-                    ? "Nuncid, press to scan. Left-click to scan once; right-click for Settings."
-                    : "Nuncid, hover off. Left-click to scan once; right-click for Settings.")
-            button.setAccessibilityLabel(label)
-        }
-        button.image?.isTemplate = true
-        button.toolTip = "Left-click to scan once · Right-click for Settings"
-        button.setAccessibilityHelp(
-            "Left-click to scan once; right-click, Control-click, or use Open Nuncid menu for Settings and controls."
-        )
+        MenuBarIconPresentation.apply(to: button, mode: mode,
+                                      hoverEnabled: hoverEnabled, matchFound: matchFound)
     }
 
 #if DEBUG

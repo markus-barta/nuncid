@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+## [1.2.2] - 2026-09-06
+
+- Let macOS render menu-bar icon contrast natively in light and dark appearances.
+
 ## [1.2.1] - 2026-09-06
 
 - Prepare update checks for future calendar releases with explicit metadata and a safe legacy bridge.
