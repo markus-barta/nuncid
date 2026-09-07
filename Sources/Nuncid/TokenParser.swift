@@ -17,6 +17,8 @@ struct OCRContextFragment: Hashable, Sendable {
     let region: OCRNormalizedRegion?
     /// Window/block ownership when available; different groups never share context.
     let contextGroup: Int?
+    let startClipped: Bool
+    let endClipped: Bool
 
     init(
         text: String,
@@ -24,7 +26,9 @@ struct OCRContextFragment: Hashable, Sendable {
         order: Int,
         confidence: Double? = nil,
         region: OCRNormalizedRegion? = nil,
-        contextGroup: Int? = nil
+        contextGroup: Int? = nil,
+        startClipped: Bool = false,
+        endClipped: Bool = false
     ) {
         self.text = text
         self.lineIndex = lineIndex
@@ -32,6 +36,8 @@ struct OCRContextFragment: Hashable, Sendable {
         self.confidence = confidence
         self.region = region
         self.contextGroup = contextGroup
+        self.startClipped = startClipped
+        self.endClipped = endClipped
     }
 }
 

@@ -35,6 +35,9 @@ enum ScreenReferenceChecks {
         check(specs("https://github.com/example/project/actions/runs/34000001234") == [.workflowRun(id: 34000001234, repo: "example/project")], "run URL")
         check(specs("gh run view 34000001234 --repo example/project --json jobs --jq '.jobs[0]' --attempt 2") == [.workflowRun(id: 34000001234, repo: "example/project")], "run argv and non-ID flag values")
         check(specs("gh --repo Example/Project run view 34000001234 --log") == [.workflowRun(id: 34000001234, repo: "example/project")], "global repo option; never copy log flag")
+        check(specs("gh run view 42 —-repo example/project —json status") == [.workflowRun(id: 42, repo: "example/project")], "OCR dash normalization for CLI flags only")
+        check(specs("gh run view: 42 --repo example/project") == [.workflowRun(id: 42, repo: "example/project")], "OCR verb punctuation")
+        check(specs("gh run view 42 –repo example/project") == [.workflowRun(id: 42, repo: "example/project")], "OCR en dash flag")
         check(specs("gh pr view 42 -Rexample/project") == [.pullRequest(number: 42, repo: "example/project")], "attached repo option")
         check(specs("gh run view 42 --repo='example/project'") == [.workflowRun(id: 42, repo: "example/project")], "quoted repo")
         check(specs("Release-PR #191 (1.8.0) markus-barta/nuncid") == [.pullRequest(number: 191, repo: "markus-barta/nuncid")], "release PR versus release version")
@@ -52,12 +55,27 @@ enum ScreenReferenceChecks {
         check(specs("gh run view 42 --repo example/a\ngh run view 42 --repo example/b").count == 2, "newline command boundaries")
         check(classify("PR42 markus-barta/nuncid inspr-at/paimos").first?.decision == .unresolved, "conflicting repo context")
         check(specs("https://github.com.evil.example/example/project/actions/runs/42").isEmpty, "spoofed URL host")
+        check(specs("https://evil.example/?next=https://github.com/example/project/pull/42").isEmpty, "nested URL does not authorize lookup")
+        check(specs("https://evil.example/?next=https://pm.barta.cm/issues/NUNCID-70").isEmpty, "nested Paimos URL does not authorize lookup")
+        check(specs("PR42 /tmp/markus-barta/nuncid").isEmpty, "filesystem path is not repository context")
+        check(specs("PR42 /tmp/NUNCID").isEmpty, "project word in path is not repository context")
+        check(specs("ticket 42 /tmp/NUNCID").isEmpty, "project word in path is not issue context")
         for value in ["../repo", "owner/../repo", "--bad/repo", "owner/repo;touch", "host/owner/repo", "owner/repo\n"] {
             check(CandidatePlanner.validatedGitHubRepo(value) == nil, "invalid repository: \(value)")
         }
+        let clippedRepo = OCRContextFragment(text: "gh run view 42 --repo example/proj", lineIndex: 0, order: 0, endClipped: true)
+        check(ScreenReferenceClassifier.classify(.init(fragments: [clippedRepo])).compactMap(\.spec).isEmpty, "syntactically valid truncated repository is not dispatched")
+        let clippedPR = OCRContextFragment(text: "markus-barta/nuncid PR123", lineIndex: 0, order: 0, endClipped: true)
+        check(ScreenReferenceClassifier.classify(.init(fragments: [clippedPR])).compactMap(\.spec).isEmpty, "truncated PR number is not dispatched")
+        let clippedKey = OCRContextFragment(text: "NUNCID-70", lineIndex: 0, order: 0, startClipped: true)
+        check(ScreenReferenceClassifier.classify(.init(fragments: [clippedKey])).compactMap(\.spec).isEmpty, "clipped prefix is not trusted")
+        let completeScope = OCRContextFragment(text: "gh run view 42 --repo example/project --json stat", lineIndex: 0, order: 0, endClipped: true)
+        check(ScreenReferenceClassifier.classify(.init(fragments: [completeScope])).compactMap(\.spec) == [.workflowRun(id: 42, repo: "example/project")], "complete scope survives unrelated trailing clipping")
         let dense = (1...50).map { "NUNCID-\($0)" }.joined(separator: " ")
         check(specs(dense).count == 50, "no legacy twelve-token cap in screen classification")
         check(classify(String(repeating: "NUNCID-1 ", count: 1000)).isEmpty, "oversized fragment fail closed")
+        let metrics = Array(repeating: (0..<20).map { "\($0)%" }.joined(separator: " "), count: 40) + ["NUNCID-70"]
+        check(ScreenReferenceClassifier.classify(.init(lines: metrics)).compactMap(\.spec) == [.issue(tracker: .ppm, key: "NUNCID-70")], "noise cannot starve later reference budget")
 
         func fragment(_ text: String, _ index: Int, _ x: Double, _ y: Double, _ width: Double, group: Int? = 1) -> OCRContextFragment {
             OCRContextFragment(text: text, lineIndex: index, order: index, confidence: 0.99,

@@ -80,7 +80,9 @@ enum OCRVisualLayout {
                 order: fragment.order,
                 confidence: fragment.confidence,
                 region: fragment.region,
-                contextGroup: fragment.contextGroup
+                contextGroup: fragment.contextGroup,
+                startClipped: fragment.startClipped,
+                endClipped: fragment.endClipped
             )
         })
     }

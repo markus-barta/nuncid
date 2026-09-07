@@ -69,6 +69,14 @@ private actor ResolverConcurrencyProbe {
 
     private static func verifyMarkerAppearance() {
         let original = MarkerAppearancePreferences()
+        let sourceBounds = CGRect(x: 30, y: 20, width: 120, height: 30)
+        let previousFrame = sourceBounds.insetBy(dx: -5, dy: -3)
+        let extendedFrame = MarkerRenderer.frame(for: sourceBounds)
+        guard extendedFrame.minY == previousFrame.minY,
+              extendedFrame.maxY == previousFrame.maxY + 3,
+              extendedFrame.minX == previousFrame.minX, extendedFrame.width == previousFrame.width else {
+            fputs("self-test failed: marker top headroom preserves bottom/source position\n", stderr); exit(1)
+        }
         guard MarkerVisualState.allCases.count == 3,
               original.unchecked.outlineColor == "#808080", original.unchecked.outlineOpacity == 0.7,
               !MarkerVisualState.unchecked.dash.isEmpty, original.unchecked.fillOpacity == 0,
@@ -143,6 +151,12 @@ private actor ResolverConcurrencyProbe {
         strike.outlineOpacity = 0; strike.fillOpacity = 0
         let diagonal = bitmap(strike, state: .missed)
         guard peakAlpha(diagonal) > 0, peakAlpha(diagonal) <= 0.51 else { exit(1) }
+        for state in [MarkerVisualState.unchecked, .matched] {
+            guard !strike.normalized(for: state).strikeThroughEnabled,
+                  peakAlpha(bitmap(strike, state: state)) == 0 else {
+                fputs("self-test failed: strike-through must never appear on unchecked or matched IDs\n", stderr); exit(1)
+            }
+        }
         strike.strikeThroughEnabled = false
         guard peakAlpha(bitmap(strike, state: .missed)) == 0 else {
             fputs("self-test failed: strike-through opacity/toggle are independent of outline/fill\n", stderr); exit(1)

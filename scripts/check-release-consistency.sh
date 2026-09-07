@@ -68,7 +68,7 @@ for stem in hero workflow lookup-highlight settings-showcase version-history; do
   }
 done
 
-for stem in pinned-card settings-scanning settings-markers settings-pinned settings-appearance version-history-dark social-preview; do
+for stem in pinned-card workflow-run settings-scanning settings-markers settings-pinned settings-appearance version-history-dark social-preview; do
   [[ -f "$repo_dir/docs/screenshots/$stem-$version.png" ]] || {
     print -u2 "Missing docs/screenshots/$stem-$version.png"
     exit 1

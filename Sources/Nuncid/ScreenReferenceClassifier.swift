@@ -44,7 +44,7 @@ enum ScreenReferenceClassifier {
     private static let words = regex(#"'[^']*'|"[^"]*"|[;&|\n]|[^\s;&|]+"#)
     private static let inheritedLabel = regex(#"(?i)(?:\bgh\s+(?:pr|run)\s+view|\bPR|\bpull[ -]+request|\bticket|\bissue)\s*[:#]?\s*$"#)
     private static let startsNumber = regex(#"^\s*#?[0-9]+\b"#)
-    private static let repoFlag = regex(#"(?:^|\s)(?:--repo(?:=|\s+)|-R\s*)([^\s;&|]+)"#)
+    private static let repoFlag = regex(#"(?:^|\s)(?:(?:--|[—–−]-?)repo(?:=|\s+)|-R\s*)([^\s;&|]+)"#)
     private static let repoURL = regex(#"(?i)https?://github\.com/([a-z0-9-]+/[a-z0-9_.-]+)"#)
     private static let slug = regex(#"(?<![\w./-])([A-Za-z0-9-]+/[A-Za-z0-9_.-]+)(?![\w./-])"#)
     private static let project = regex("\\b(?:" + (CandidatePlanner.ppmProjects.union(CandidatePlanner.pmaProjects)).sorted().joined(separator: "|") + ")\\b")
@@ -90,22 +90,28 @@ enum ScreenReferenceClassifier {
         let fragments = Array(input.fragments.prefix(maximumFragments)).map { fragment in
             guard (fragment.text as NSString).length > maximumCharactersPerFragment else { return fragment }
             return OCRContextFragment(text: "", lineIndex: fragment.lineIndex, order: fragment.order,
-                confidence: fragment.confidence, region: fragment.region, contextGroup: fragment.contextGroup)
+                confidence: fragment.confidence, region: fragment.region, contextGroup: fragment.contextGroup,
+                startClipped: fragment.startClipped, endClipped: fragment.endClipped)
         }
         let bounded = OCRContextInput(fragments: fragments)
         let tokens = Dictionary(grouping: TokenParser.parse(bounded), by: \.fragmentIndex)
         var result: [ClassifiedScreenReference] = []
+        var visibleCount = 0
         for (index, fragment) in fragments.enumerated() {
             guard (fragment.text as NSString).length <= maximumCharactersPerFragment else { continue }
             let neighbors = contextNeighbors(of: index, in: fragments)
             // A split `PR | 42` or wrapped `gh run view / 123` may inherit only
             // an attached terminal cue, never arbitrary nearby PR language.
-            let predecessor = neighbors.filter { isBefore($0, fragment) && inheritedLabel.firstMatch(in: $0.text, range: fullRange($0.text)) != nil }.first
+            let predecessor = neighbors.filter { !$0.startClipped && !$0.endClipped && isBefore($0, fragment) && inheritedLabel.firstMatch(in: $0.text, range: fullRange($0.text)) != nil }.first
             let prefix = startsNumber.firstMatch(in: fragment.text, range: fullRange(fragment.text)) != nil ? predecessor.map { $0.text + " " } ?? "" : ""
             let text = prefix + fragment.text
             let offset = (prefix as NSString).length
             let ns = text as NSString
-            let commandValues = commands(in: text)
+            let commandValues = commands(in: text, startClipped: prefix.isEmpty ? fragment.startClipped : false, endClipped: fragment.endClipped)
+            func complete(_ range: NSRange) -> Bool {
+                !(prefix.isEmpty && fragment.startClipped && range.location == 0)
+                    && !(fragment.endClipped && NSMaxRange(range) == ns.length)
+            }
             let protected = spans(containers, in: text)
             let numbers = spans(numericNoise, in: text)
             var covered: [NSRange] = []
@@ -123,6 +129,12 @@ enum ScreenReferenceClassifier {
                 guard !covered.contains(where: { NSIntersectionRange($0, range).length > 0 }),
                       let found = token(range, kind: kind) else { return }
                 covered.append(range)
+                if decision == .ignore {
+                    guard result.count < maximumReferences else { return }
+                } else {
+                    guard visibleCount < maximumReferences else { return }
+                    visibleCount += 1
+                }
                 result.append(ClassifiedScreenReference(token: found, category: category, decision: decision, reason: reason))
             }
             func resolve(_ range: NSRange, category: ScreenReferenceCategory, number: Int, scopes: [String], invalid: Bool, reason: String) {
@@ -143,7 +155,7 @@ enum ScreenReferenceClassifier {
             }
 
             for match in issueURL.matches(in: text, range: fullRange(text)) {
-                guard let tracker = CandidatePlanner.issueURLTrackers[ns.substring(with: match.range(at: 1)).lowercased()],
+                guard complete(match.range), isWholeURLStart(match.range, in: text), let tracker = CandidatePlanner.issueURLTrackers[ns.substring(with: match.range(at: 1)).lowercased()],
                       let number = Int(ns.substring(with: match.range(at: 3))), number > 0 else { continue }
                 let project = ns.substring(with: match.range(at: 2)).uppercased()
                 let range = NSRange(location: match.range(at: 2).location, length: NSMaxRange(match.range(at: 3)) - match.range(at: 2).location)
@@ -151,6 +163,7 @@ enum ScreenReferenceClassifier {
                        decision: .lookup(.issue(tracker: tracker, key: "\(project)-\(number)")), reason: "Explicit Paimos issue URL")
             }
             for match in url.matches(in: text, range: fullRange(text)) {
+                guard complete(match.range), isWholeURLStart(match.range, in: text) else { continue }
                 let numberRange = match.range(at: 3)
                 guard let number = Int(ns.substring(with: numberRange)) else { continue }
                 let repo = CandidatePlanner.validatedGitHubRepo(ns.substring(with: match.range(at: 1)))
@@ -159,7 +172,7 @@ enum ScreenReferenceClassifier {
             }
             for command in commandValues {
                 guard let number = Int(command.number.text) else { continue }
-                let inferred = repositoryScopes(in: neighbors.map(\.text))
+                let inferred = repositoryScopes(in: neighbors)
                 resolve(command.number.range, category: command.category, number: number,
                         scopes: command.scope.isEmpty && !command.invalidScope ? inferred.scopes : command.scope,
                         invalid: command.invalidScope || (command.scope.isEmpty && inferred.invalid), reason: "Explicit gh \(command.category == .workflowRun ? "run" : "pr") view command")
@@ -172,7 +185,9 @@ enum ScreenReferenceClassifier {
                 let inCommand = commandValues.contains { NSIntersectionRange($0.span, range).length > 0 }
                 let suffix = ns.substring(from: NSMaxRange(range))
                 let compound = suffix.hasPrefix("-") || suffix.range(of: #"^\.[A-Za-z0-9]"#, options: .regularExpression) != nil
-                if let noise = overlaps(range, protected), !inCommand {
+                if !complete(range) {
+                    append(range, kind: original.kind, category: .issue, decision: .ignore, reason: "Clipped identifier")
+                } else if let noise = overlaps(range, protected), !inCommand {
                     append(range, kind: original.kind, category: .issue, decision: .ignore, reason: noise)
                 } else if compound || inCommand {
                     append(range, kind: original.kind, category: .issue, decision: .ignore, reason: "Compound name or command argument")
@@ -188,6 +203,10 @@ enum ScreenReferenceClassifier {
                 for match in pattern.matches(in: text, range: fullRange(text)) {
                     let range = match.range(at: 2)
                     guard let number = Int(ns.substring(with: range)) else { continue }
+                    guard complete(range) else {
+                        append(range, kind: .bareNumber(number), category: .unknown, decision: .ignore, reason: "Clipped identifier")
+                        continue
+                    }
                     if let noise = overlaps(range, protected + numbers) {
                         append(range, kind: .bareNumber(number), category: .unknown, decision: .ignore, reason: noise)
                         continue
@@ -196,14 +215,15 @@ enum ScreenReferenceClassifier {
                     let category: ScreenReferenceCategory = cue.lowercased() == "pr" || cue.lowercased().hasPrefix("pull") ? .pullRequest : .issue
                     let start = max(0, range.location - 100)
                     let local = ns.substring(with: NSRange(location: start, length: min(ns.length, NSMaxRange(range) + 100) - start))
-                    let context = [local] + neighbors.map(\.text)
+                    let localContext = OCRContextFragment(text: local, lineIndex: fragment.lineIndex, order: fragment.order,
+                        startClipped: start > 0 || (prefix.isEmpty && fragment.startClipped),
+                        endClipped: fragment.endClipped || NSMaxRange(range) + 100 < ns.length)
+                    let context = [localContext] + neighbors
                     if category == .pullRequest {
                         let repos = repositoryScopes(in: context)
                         resolve(range, category: category, number: number, scopes: repos.scopes, invalid: repos.invalid, reason: "Attached PR label and local repository context")
                     } else {
-                        let projects = context.flatMap { line in
-                            project.matches(in: line, range: fullRange(line)).map { (line as NSString).substring(with: $0.range) }
-                        }
+                        let projects = context.flatMap { projectScopes(in: $0.text, startClipped: $0.startClipped, endClipped: $0.endClipped) }
                         resolve(range, category: category, number: number, scopes: projects, invalid: false, reason: "Attached issue label and local project context")
                     }
                 }
@@ -219,22 +239,37 @@ enum ScreenReferenceClassifier {
                        decision: ambiguousHash ? .unresolved : .ignore,
                        reason: noise ?? (ambiguousHash ? "Reference type and scope needed" : "No local reference evidence"))
             }
-            if result.count >= maximumReferences { break }
+            if visibleCount >= maximumReferences { break }
         }
-        return Array(result.sorted { $0.token.sourceOrder < $1.token.sourceOrder }.prefix(maximumReferences))
+        // Numeric clutter must not consume the discovery budget before later
+        // real references. Retain only as many ignored diagnostics as fit.
+        let visible = result.filter(\.isVisibleCandidate)
+        let ignored = result.filter { !$0.isVisibleCandidate }.prefix(maximumReferences - visible.count)
+        return (visible + ignored).sorted { $0.token.sourceOrder < $1.token.sourceOrder }
     }
 
-    private static func commands(in text: String) -> [Command] {
+    /// Vision often renders two CLI hyphens as an em/en dash, sometimes
+    /// retaining one hyphen. Normalize flag prefixes only; never rewrite IDs,
+    /// repository names, or executable text, and never execute the source.
+    private static func normalizedFlag(_ word: String) -> String {
+        let prefix = word.prefix { "-—–−".contains($0) }
+        guard prefix.contains(where: { $0 != "-" }) else { return word }
+        let rest = word.dropFirst(prefix.count)
+        return (rest.hasPrefix("R") ? "-" : "--") + rest
+    }
+
+    private static func commands(in text: String, startClipped: Bool, endClipped: Bool) -> [Command] {
         let ns = text as NSString
         let parts = words.matches(in: text, range: fullRange(text)).map { Word(text: ns.substring(with: $0.range), range: $0.range) }
         var result: [Command] = []
         for start in parts.indices where parts[start].text == "gh" {
+            if startClipped, parts[start].range.location == 0 { continue }
             var i = start + 1
             var repos: [String] = []
             var invalid = false
             func takeRepo() -> Bool {
                 guard i < parts.count else { return false }
-                let word = parts[i].text
+                let word = normalizedFlag(parts[i].text)
                 var raw: String?
                 if word == "--repo" || word == "-R" {
                     i += 1
@@ -242,20 +277,21 @@ enum ScreenReferenceClassifier {
                 } else if word.hasPrefix("--repo=") { raw = String(word.dropFirst(7)) }
                 else if word.hasPrefix("-R"), word.count > 2 { raw = String(word.dropFirst(2)) }
                 else { return false }
+                if i < parts.count, endClipped, NSMaxRange(parts[i].range) == ns.length { invalid = true }
                 if let raw, let repo = CandidatePlanner.validatedGitHubRepo(unquote(raw)) { repos.append(repo) }
                 else { invalid = true }
                 i += 1
                 return true
             }
             while takeRepo() {}
-            guard i + 1 < parts.count, ["pr", "run"].contains(parts[i].text), parts[i + 1].text == "view" else { continue }
+            guard i + 1 < parts.count, ["pr", "run"].contains(parts[i].text), ["view", "view:"].contains(parts[i + 1].text) else { continue }
             let category: ScreenReferenceCategory = parts[i].text == "run" ? .workflowRun : .pullRequest
             i += 2
             var ids: [Word] = []
             var unsupported = false
             while i < parts.count, ![";", "|", "&", "\n"].contains(parts[i].text) {
                 if takeRepo() { continue }
-                let word = parts[i].text
+                let word = normalizedFlag(parts[i].text)
                 if ["--json", "--jq", "-q", "--template", "-t", "--attempt"].contains(word) { i += 2; continue }
                 if word.hasPrefix("--json=") || word.hasPrefix("--jq=") || word.hasPrefix("--attempt=") { i += 1; continue }
                 if ["--web", "-w", "--comments", "-c", "--log", "--log-failed", "--verbose", "--exit-status"].contains(word) { i += 1; continue }
@@ -265,6 +301,7 @@ enum ScreenReferenceClassifier {
             }
             let end = i < parts.count ? parts[i].range.location : ns.length
             if ids.count == 1, !unsupported {
+                if endClipped, NSMaxRange(ids[0].range) == ns.length { invalid = true }
                 result.append(Command(category: category, number: ids[0], scope: repos, invalidScope: invalid,
                     span: NSRange(location: parts[start].range.location, length: end - parts[start].range.location)))
             }
@@ -272,28 +309,52 @@ enum ScreenReferenceClassifier {
         return result
     }
 
-    private static func repositoryScopes(in lines: [String]) -> (scopes: [String], invalid: Bool) {
+    private static func repositoryScopes(in lines: [OCRContextFragment]) -> (scopes: [String], invalid: Bool) {
         var repos: [String] = []
         var invalid = false
         let canonical = Set(CandidatePlanner.ppmProjects.union(CandidatePlanner.pmaProjects).compactMap { CandidatePlanner.repo(for: $0) })
-        for line in lines {
+        for fragment in lines {
+            let line = fragment.text
             let ns = line as NSString
+            func complete(_ range: NSRange) -> Bool {
+                !(fragment.startClipped && range.location == 0) && !(fragment.endClipped && NSMaxRange(range) == ns.length)
+            }
             for match in repoFlag.matches(in: line, range: fullRange(line)) {
+                guard complete(match.range) else { invalid = true; continue }
                 if let repo = CandidatePlanner.validatedGitHubRepo(unquote(ns.substring(with: match.range(at: 1)))) { repos.append(repo) }
                 else { invalid = true }
             }
             for match in repoURL.matches(in: line, range: fullRange(line)) {
+                guard complete(match.range), isWholeURLStart(match.range, in: line) else { continue }
                 if let repo = CandidatePlanner.validatedGitHubRepo(ns.substring(with: match.range(at: 1))) { repos.append(repo) }
             }
             for match in slug.matches(in: line, range: fullRange(line)) {
                 let raw = ns.substring(with: match.range(at: 1)).lowercased()
-                if canonical.contains(raw) { repos.append(raw) }
+                let enclosing = containers.prefix(2).flatMap { $0.pattern.matches(in: line, range: fullRange(line)) }
+                    .contains { NSIntersectionRange($0.range, match.range).length > 0 && $0.range != match.range }
+                if complete(match.range), !enclosing, canonical.contains(raw) { repos.append(raw) }
             }
-            for match in project.matches(in: line, range: fullRange(line)) {
-                if let repo = CandidatePlanner.repo(for: ns.substring(with: match.range)) { repos.append(repo) }
+            for key in projectScopes(in: line, startClipped: fragment.startClipped, endClipped: fragment.endClipped) {
+                if let repo = CandidatePlanner.repo(for: key) { repos.append(repo) }
             }
         }
         return (repos, invalid)
+    }
+
+    private static func isWholeURLStart(_ range: NSRange, in text: String) -> Bool {
+        containers[0].pattern.matches(in: text, range: fullRange(text)).contains {
+            $0.range.location == range.location && NSMaxRange($0.range) >= NSMaxRange(range)
+        }
+    }
+
+    private static func projectScopes(in text: String, startClipped: Bool, endClipped: Bool) -> [String] {
+        let protected = spans(containers, in: text)
+        return project.matches(in: text, range: fullRange(text)).compactMap {
+            guard !(startClipped && $0.range.location == 0),
+                  !(endClipped && NSMaxRange($0.range) == (text as NSString).length),
+                  overlaps($0.range, protected) == nil else { return nil }
+            return (text as NSString).substring(with: $0.range)
+        }
     }
 
     private static func contextNeighbors(of index: Int, in fragments: [OCRContextFragment]) -> [OCRContextFragment] {

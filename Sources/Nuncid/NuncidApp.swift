@@ -464,7 +464,13 @@ import SwiftUI
             let single = CommandLine.arguments.contains("--overlay-single-probe")
             let minimumStress = CommandLine.arguments.contains("--overlay-minimum-stress-probe")
             let keyFlight = CommandLine.arguments.contains("--overlay-key-flight-probe")
-            let lines: [TicketLine] = keyFlight ? [
+            let lines: [TicketLine] = CommandLine.arguments.contains("--overlay-run-probe") ? [
+                TicketLine(key: "Run 34000001234", state: "success", title: "Context-aware reference discovery", source: "gh",
+                    metadata: "markus-barta/nuncid · workflow run · main · abcdef1",
+                    detail: "CI · push · Duration 2m 26s",
+                    destination: "https://github.com/markus-barta/nuncid/actions/runs/34000001234",
+                    identity: "run:markus-barta/nuncid:34000001234")
+            ] : keyFlight ? [
                 TicketLine(key: "HAUSV-16", state: "in-progress", title: "Current result holds its exact card position", source: "ppm", detail: "Only the key label travels when the wheel advances."),
                 TicketLine(key: "HAUSV-38", state: "done", title: "Next result arrives cleanly in the fixed card header without wrapping until its motion has finished", source: "ppm", detail: "Matched identity gives the movement one continuous path."),
                 TicketLine(key: "HAUSV-52", state: "backlog", title: "Following result remains ready below", source: "ppm"),

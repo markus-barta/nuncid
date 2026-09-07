@@ -316,6 +316,7 @@ private final class ExplorationMarkerView: NSView {
         onStateChange?(true, selected.flatMap { jobs[$0]?.outcome } == .matched, "Exploring outward from pointer…")
         discovery = Task { [weak self] in
             guard let self else { return }
+            var contextReads = Set<String>()
             while !tiles.isEmpty {
                 guard !Task.isCancelled, isActive, generation == geometryGeneration else { return }
                 let tile = tiles.removeFirst()
@@ -324,11 +325,15 @@ private final class ExplorationMarkerView: NSView {
                 let recognized = await ocr.recognizeFragments(plan: capture)
                 guard !Task.isCancelled, generation == geometryGeneration else { return }
                 let fragments = recognized.filter { !self.overOwnWindow($0.screenBounds) && ScreenContextGeometry.owner(of: $0.screenBounds, windows: windows) != nil }
+                let captureBounds = capture.appKitRect(forQuartz: capture.rect)
                 let input = OCRContextInput(fragments: fragments.enumerated().map { index, fragment in
-                    OCRContextFragment(text: fragment.text, lineIndex: index, order: index,
+                    let edgeMargin = max(3, fragment.screenBounds.width / CGFloat(max(1, fragment.text.count)))
+                    return OCRContextFragment(text: fragment.text, lineIndex: index, order: index,
                         confidence: Double(fragment.confidence),
                         region: OCRNormalizedRegion(x: fragment.normalizedBounds.minX, y: fragment.normalizedBounds.minY, width: fragment.normalizedBounds.width, height: fragment.normalizedBounds.height),
-                        contextGroup: ScreenContextGeometry.owner(of: fragment.screenBounds, windows: windows))
+                        contextGroup: ScreenContextGeometry.owner(of: fragment.screenBounds, windows: windows),
+                        startClipped: fragment.screenBounds.minX - captureBounds.minX < edgeMargin,
+                        endClipped: captureBounds.maxX - fragment.screenBounds.maxX < edgeMargin)
                 })
                 let references = await planner.classifyScreen(input)
                 guard !Task.isCancelled, generation == geometryGeneration else { return }
@@ -339,6 +344,17 @@ private final class ExplorationMarkerView: NSView {
                     // Semantic identity, not literal equality: PR42 and run42 in
                     // different repositories must never share a resolution job.
                     let primary = reference.spec.map { [$0] } ?? []
+                    if primary.isEmpty, reference.category != .unknown, contextReads.count < 8 {
+                        let contextKey = "\(reference.category.rawValue):\(token.raw):\(Int(anchor.bounds.midX / 20)):\(Int(anchor.bounds.midY / 20))"
+                        if contextReads.insert(contextKey).inserted {
+                            // A command may be wider than a discovery tile. One
+                            // bounded horizontal context read can recover its
+                            // complete --repo value; never guess a cropped scope.
+                            let wider = CGRect(x: anchor.bounds.midX - 500, y: anchor.bounds.midY - 120,
+                                               width: 1_000, height: 240).intersection(content)
+                            if wider.width > 20, wider.height > 20 { tiles.insert(wider, at: 0) }
+                        }
+                    }
                     let id = reference.spec?.cacheKey ?? "unresolved:\(reference.category.rawValue):\(anchor.id)"
                     if jobs[id] == nil {
                         guard jobs.count < ExplorationPolicy.maximumCandidates else { continue }
