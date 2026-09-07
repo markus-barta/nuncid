@@ -324,6 +324,10 @@ private actor ResolverConcurrencyProbe {
         verifyExploration()
         verifyMarkerAppearance()
         verifyResolverConcurrency()
+        let contextFailures = ScreenReferenceChecks.run()
+        guard contextFailures.isEmpty else {
+            fputs("self-test failed: screen reference context: \(contextFailures.joined(separator: "; "))\n", stderr); exit(1)
+        }
         let tokens = TokenParser.parse([
             "HAUSV-578 PAI-843 START-186 PHAROS-203 JANUS-455",
             "collision #130 bare 130 release 0.99.12",

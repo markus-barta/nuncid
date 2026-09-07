@@ -79,7 +79,8 @@ enum OCRVisualLayout {
                 lineIndex: visualLineByFragment[index] ?? firstFallbackLine + max(0, fragment.lineIndex),
                 order: fragment.order,
                 confidence: fragment.confidence,
-                region: fragment.region
+                region: fragment.region,
+                contextGroup: fragment.contextGroup
             )
         })
     }

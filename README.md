@@ -90,6 +90,30 @@ The app’s **Version History** explains each release in concise, positive human
 
 ## Smarter resolution, fewer wrong guesses
 
+### Context-aware discovery (in development — NUNCID-70)
+
+Screen discovery now has a deterministic classification stage before lookup.
+Complete PR/run command syntax, supported GitHub/Paimos URLs and explicit project
+keys take precedence. Percentages, times, dates, quantities, counters, structural
+JSON values, paths and model-name fragments do not become automatic ticket lookups.
+Context is bounded to nearby text in the same geometric block and window; clipped
+crop-edge identifiers are rejected until a complete overlapping view is available.
+
+A plausible reference without a unique type/repository/project remains gray and
+unresolved. It does **not** trigger a broad namespace search, and Option retry does
+not invent missing scope. Add nearby context or paste a complete typed reference.
+Intentional pinned number entry remains separate and keeps its explicit project.
+
+GitHub Actions runs have their own identities and read-only summary adapter:
+`gh run view <id> --repo <validated-repository> --json <fixed-summary-fields>`.
+The preview includes title/workflow, status/conclusion, branch/commit, timing and
+link. No pictured command is executed and no logs/artifacts are downloaded. Active
+run summaries expire after30 seconds, completed runs after5 minutes; explicit
+revisits may refresh them, without background polling. Run/PR/repository cache
+identities are distinct. This work is not part of the release shown above yet.
+
+The legacy/manual evidence planner remains available for explicit input:
+
 Explicit evidence wins. Nuncid combines the shape and position of nearby OCR text with GitHub URLs, the foreground app and window, the pinned card, and short-lived per-app history. It resolves strong candidates first, tries weaker fallbacks only when needed, and never fabricates a “maybe” result.
 
 - Known PPM projects resolve through the `ppm` Paimos instance; `START` resolves through `pma`.

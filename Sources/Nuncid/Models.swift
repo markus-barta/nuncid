@@ -111,8 +111,8 @@ struct TicketLine: Codable, Hashable, Identifiable, Sendable {
     let detail: String
     let destination: String?
 
-    init(key: String, state: String, title: String, source: String, metadata: String = "", detail: String = "", destination: String? = nil) {
-        self.id = "\(source):\(key)"
+    init(key: String, state: String, title: String, source: String, metadata: String = "", detail: String = "", destination: String? = nil, identity: String? = nil) {
+        self.id = identity ?? "\(source):\(key)"
         self.key = key
         self.state = state
         self.title = title
@@ -204,10 +204,12 @@ struct PinnedTicketContext: Equatable, Sendable {
 enum CandidateSpec: Hashable, Sendable {
     case issue(tracker: Tracker, key: String)
     case pullRequest(number: Int, repo: String)
+    case workflowRun(id: Int, repo: String)
     var cacheKey: String {
         switch self {
         case let .issue(tracker, key): return "issue:\(tracker.rawValue):\(key)"
         case let .pullRequest(number, repo): return "pr:\(repo):\(number)"
+        case let .workflowRun(id, repo): return "run:\(repo):\(id)"
         }
     }
 }
