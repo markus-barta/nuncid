@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+## [26.09.07.07.09.01] - 2026-09-07
+
+- Simplify detection frames to three configurable color styles, with independent opacity and diagonal strike-through controls.
+
 ## [26.09.06.19.36.59] - 2026-09-06
 
 - Explore screen references on demand, with subtle status badges, hover-prioritized lookups, and verified calendar-version packaging.

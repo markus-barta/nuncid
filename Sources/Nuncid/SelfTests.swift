@@ -67,12 +67,93 @@ private actor ResolverConcurrencyProbe {
         }
     }
 
+    private static func verifyMarkerAppearance() {
+        let original = MarkerAppearancePreferences()
+        guard MarkerVisualState.allCases.count == 3,
+              original.unchecked.outlineColor == "#808080", original.unchecked.outlineOpacity == 0.7,
+              !MarkerVisualState.unchecked.dash.isEmpty, original.unchecked.fillOpacity == 0,
+              original.missed.outlineColor == "#555555", original.missed.strikeThroughEnabled,
+              original.missed.strikeThroughOpacity == 0.5, MarkerVisualState.missed.dash.isEmpty,
+              original.matched.outlineColor == "#34C759", original.matched.fillOpacity == 0.1,
+              !original.matched.strikeThroughEnabled, !original.unchecked.strikeThroughEnabled else {
+            fputs("self-test failed: three-state marker defaults\n", stderr); exit(1)
+        }
+        let suite = "nuncid-marker-tests-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        defaults.set("sentinel", forKey: "inspectHotKey")
+        let notified = SelfTestAsyncResult()
+        let observer = NotificationCenter.default.addObserver(forName: .nuncidMarkerAppearanceDidChange, object: nil, queue: nil) { _ in notified.set(true) }
+        defer { NotificationCenter.default.removeObserver(observer) }
+        var preferences = original
+        preferences[.matched].outlineColor = "123abc"
+        preferences[.matched].outlineOpacity = 0.43
+        preferences[.matched].fillColor = "#ABCDEF"
+        preferences[.matched].fillOpacity = 0.17
+        preferences[.matched].strikeThroughEnabled = true
+        preferences[.matched].strikeThroughColor = "#CC1100"
+        preferences[.matched].strikeThroughOpacity = 0.23
+        preferences.persist(defaults: defaults)
+        let restored = MarkerAppearancePreferences.load(defaults: defaults)
+        guard restored == preferences.normalized, notified.get(),
+              restored.unchecked == original.unchecked, restored.missed == original.missed,
+              restored.matched.outlineColor == "#123ABC",
+              defaults.string(forKey: "inspectHotKey") == "sentinel" else {
+            fputs("self-test failed: independent marker preferences persist/notify without changing shortcuts\n", stderr); exit(1)
+        }
+        var bad = original.matched
+        bad.outlineColor = "#oops"; bad.outlineOpacity = -5
+        bad.fillOpacity = 5; bad.strikeThroughOpacity = .nan
+        let fixed = bad.normalized(for: .matched)
+        guard fixed.outlineColor == original.matched.outlineColor, fixed.outlineOpacity == 0,
+              fixed.fillOpacity == 1, fixed.strikeThroughOpacity == 0.5,
+              MarkerColor.normalized("#12345") == nil,
+              MarkerColor.normalized("#12345678") == nil,
+              MarkerColor.normalized(" 123456") == nil,
+              MarkerColor.hex(MarkerColor.nsColor("#34C759")) == "#34C759" else {
+            fputs("self-test failed: marker color/opacity normalization\n", stderr); exit(1)
+        }
+        defaults.set(Data("broken JSON".utf8), forKey: MarkerAppearancePreferences.defaultsKey)
+        guard MarkerAppearancePreferences.load(defaults: defaults) == original else { exit(1) }
+
+        func bitmap(_ style: MarkerStyle, state: MarkerVisualState, selected: Bool = false) -> NSBitmapImageRep {
+            let image = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: 200, pixelsHigh: 80,
+                bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
+                colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)!
+            image.bitmapData!.initialize(repeating: 0, count: image.bytesPerRow * image.pixelsHigh)
+            NSGraphicsContext.saveGraphicsState()
+            NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: image)
+            MarkerRenderer.draw(bounds: CGRect(x: 30, y: 20, width: 120, height: 30), state: state, selected: selected, style: style)
+            NSGraphicsContext.restoreGraphicsState()
+            return image
+        }
+        func peakAlpha(_ image: NSBitmapImageRep) -> CGFloat {
+            (0..<80).flatMap { y in (0..<200).map { x in image.colorAt(x: x, y: y)!.alphaComponent } }.max()!
+        }
+        for selected in [false, true] {
+            let fill = bitmap(original.matched, state: .matched, selected: selected)
+            guard abs(fill.colorAt(x: 90, y: 40)!.alphaComponent - 0.1) < 0.01,
+                  fill.colorAt(x: 159, y: 25)!.alphaComponent == 0 else {
+                fputs("self-test failed: exact green fill opacity, no corner badges, selected opacity unchanged\n", stderr); exit(1)
+            }
+            let pending = bitmap(original.unchecked, state: .unchecked, selected: selected)
+            guard peakAlpha(pending) <= 0.71, peakAlpha(pending) > 0.5 else { exit(1) }
+        }
+        var strike = original.missed
+        strike.outlineOpacity = 0; strike.fillOpacity = 0
+        let diagonal = bitmap(strike, state: .missed)
+        guard peakAlpha(diagonal) > 0, peakAlpha(diagonal) <= 0.51 else { exit(1) }
+        strike.strikeThroughEnabled = false
+        guard peakAlpha(bitmap(strike, state: .missed)) == 0 else {
+            fputs("self-test failed: strike-through opacity/toggle are independent of outline/fill\n", stderr); exit(1)
+        }
+    }
+
     private static func verifyExploration() {
         let states: [ExplorationOutcome] = [.matched, .queued, .resolving, .missed]
         guard states.filter({ $0.isNavigable(includeMisses: false) }) == [.matched, .queued, .resolving],
               states.allSatisfy({ $0.isNavigable(includeMisses: true) }),
-              ExplorationOutcome.queued.dash != ExplorationOutcome.missed.dash,
-              states.filter(\.showsCheck) == [.matched], states.filter(\.showsQuestion) == [.missed],
+              states.map(\.markerState) == [.matched, .unchecked, .unchecked, .missed],
               PopupScrollPresentationPolicy.opacity(pointerInside: false, recentlyScrolling: true, reduceTransparency: false) == 0.5,
               PopupScrollPresentationPolicy.opacity(pointerInside: true, recentlyScrolling: true, reduceTransparency: false) == 1,
               PopupScrollPresentationPolicy.opacity(pointerInside: false, recentlyScrolling: false, reduceTransparency: false) == 1,
@@ -241,6 +322,7 @@ private actor ResolverConcurrencyProbe {
         verifyMenuBarIconPresentation()
         verifyMenuBarTargetSelection()
         verifyExploration()
+        verifyMarkerAppearance()
         verifyResolverConcurrency()
         let tokens = TokenParser.parse([
             "HAUSV-578 PAI-843 START-186 PHAROS-203 JANUS-455",

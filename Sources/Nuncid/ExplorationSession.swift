@@ -24,57 +24,15 @@ private final class ExplorationMarkerPanel: NSPanel {
 
 private final class ExplorationMarkerView: NSView {
     var markers: [(CGRect, ExplorationOutcome, Bool)] = [] { didSet { needsDisplay = true } }
+    var appearancePreferences = MarkerAppearancePreferences() {
+        didSet { if oldValue != appearancePreferences { needsDisplay = true } }
+    }
     override func draw(_ dirtyRect: NSRect) {
         for (bounds, outcome, selected) in markers {
-            let frame = bounds.insetBy(dx: -5, dy: -3)
-            let path = NSBezierPath(roundedRect: frame, xRadius: 5, yRadius: 5)
-            path.lineWidth = selected ? 1.4 : 0.75
-            path.lineCapStyle = .round
-            path.lineJoinStyle = .round
-            path.setLineDash(outcome.dash, count: outcome.dash.count, phase: 0)
-            outcome.color.withAlphaComponent(selected ? 0.055 : 0.02).setFill()
-            path.fill()
-            NSGraphicsContext.saveGraphicsState()
-            if selected {
-                let shadow = NSShadow()
-                shadow.shadowColor = outcome.color.withAlphaComponent(0.16)
-                shadow.shadowBlurRadius = 4
-                shadow.shadowOffset = .zero
-                shadow.set()
-            }
-            outcome.color.withAlphaComponent(selected ? 0.9 : 0.5).setStroke()
-            path.stroke()
-            NSGraphicsContext.restoreGraphicsState()
-            if outcome.showsCheck || outcome.showsQuestion {
-                drawBadge(outcome, in: CGRect(x: frame.maxX - 5, y: frame.maxY - 5, width: 10, height: 10))
-            }
+            let state = outcome.markerState
+            MarkerRenderer.draw(bounds: bounds, state: state, selected: selected,
+                                style: appearancePreferences[state])
         }
-    }
-
-    /// Tiny native vector paths, not raster glyphs: crisp at every display scale.
-    private func drawBadge(_ outcome: ExplorationOutcome, in rect: CGRect) {
-        let background = NSBezierPath(ovalIn: rect.insetBy(dx: -1, dy: -1))
-        NSColor.windowBackgroundColor.withAlphaComponent(0.95).setFill()
-        background.fill()
-        let color = outcome.showsCheck ? outcome.color : NSColor.secondaryLabelColor
-        color.withAlphaComponent(0.8).setStroke()
-        func point(_ x: CGFloat, _ y: CGFloat) -> CGPoint { CGPoint(x: rect.minX + rect.width * x, y: rect.minY + rect.height * y) }
-        let path = NSBezierPath()
-        path.lineWidth = 1.15
-        path.lineCapStyle = .round
-        path.lineJoinStyle = .round
-        if outcome.showsCheck {
-            path.move(to: point(0.23, 0.48))
-            path.line(to: point(0.43, 0.28))
-            path.line(to: point(0.78, 0.73))
-        } else {
-            path.move(to: point(0.3, 0.68))
-            path.curve(to: point(0.7, 0.66), controlPoint1: point(0.3, 0.91), controlPoint2: point(0.73, 0.91))
-            path.curve(to: point(0.5, 0.32), controlPoint1: point(0.7, 0.5), controlPoint2: point(0.5, 0.52))
-            color.withAlphaComponent(0.8).setFill()
-            NSBezierPath(ovalIn: CGRect(x: rect.midX - 0.65, y: rect.minY + 1.1, width: 1.3, height: 1.3)).fill()
-        }
-        path.stroke()
     }
 }
 
@@ -109,6 +67,7 @@ private final class ExplorationMarkerView: NSView {
     private var localMonitor: Any?
     private var workspaceObservers: [NSObjectProtocol] = []
     private var screenObserver: NSObjectProtocol?
+    private var markerAppearanceObserver: NSObjectProtocol?
     private let markerPanel: ExplorationMarkerPanel
     private let markerView = ExplorationMarkerView()
 
@@ -162,6 +121,8 @@ private final class ExplorationMarkerView: NSView {
         workspaceObservers.removeAll()
         if let screenObserver { NotificationCenter.default.removeObserver(screenObserver) }
         screenObserver = nil
+        if let markerAppearanceObserver { NotificationCenter.default.removeObserver(markerAppearanceObserver) }
+        markerAppearanceObserver = nil
         onStateChange?(false, false, "Ready")
     }
 
@@ -445,6 +406,14 @@ private final class ExplorationMarkerView: NSView {
 #endif
 
     private func installObservers() {
+        markerView.appearancePreferences = MarkerAppearancePreferences.load()
+        markerAppearanceObserver = NotificationCenter.default.addObserver(forName: .nuncidMarkerAppearanceDidChange, object: nil, queue: .main) { [weak self] _ in
+            Task { @MainActor in
+                guard let self, self.isActive else { return }
+                // Presentation-only: never invalidate OCR geometry or relaunch a lookup.
+                self.markerView.appearancePreferences = MarkerAppearancePreferences.load()
+            }
+        }
         // Passive event observation; never inspect keystroke text or swallow
         // events belonging to the source app. Global key observation may be
         // unavailable without existing Accessibility permission.
@@ -497,12 +466,11 @@ struct ExplorationReleaseProbe: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 28) {
             Text("Explore at your own pace.").font(.system(size: 40, weight: .bold))
-            Text("One invocation. Progressive discovery. Cached context when you hover.").font(.title3).foregroundStyle(.secondary)
+            Text("Three quiet states. No badges. Configure every color and opacity in Detection Frames.").font(.title3).foregroundStyle(.secondary)
             HStack(spacing: 22) {
-                sample("NUNCID-63", .queued, "Queued", "Nearest IDs first")
-                sample("NUNCID-64", .resolving, "Checking", "Hover to prioritize")
-                sample("NUNCID-65", .matched, "Matched", "Selected source stays marked")
-                sample("999999", .missed, "No match", "Option + scroll to retry")
+                sample("NUNCID-63", .queued, "Unchecked / checking", "Gray dashes · 70% outline")
+                sample("999999", .missed, "No match", "Dark gray · 50% diagonal")
+                sample("NUNCID-65", .matched, "Matched", "Green · 10% fill")
             }
             Divider()
             Text("Scroll through matches and pending IDs. Hold Option to include misses.").font(.headline)
@@ -517,9 +485,9 @@ struct ExplorationReleaseProbe: View {
     private func sample(_ literal: String, _ outcome: ExplorationOutcome, _ title: String, _ detail: String) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             ExplorationMarkerSample(literal: literal, outcome: outcome).frame(width: 225, height: 75)
-            Text(title).font(.headline).foregroundColor(Color(nsColor: outcome == .missed ? .secondaryLabelColor : outcome.color))
+            Text(title).font(.headline).foregroundStyle(.primary)
             Text(detail).font(.caption).foregroundStyle(.secondary)
-        }.frame(width: 245, alignment: .leading)
+        }.frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 #endif

@@ -21,6 +21,19 @@ struct ReleaseNote: Identifiable, Equatable {
 enum ReleaseHistory {
     static let notes: [ReleaseNote] = [
         ReleaseNote(
+            version: "26.09.07.07.09.01",
+            isoDate: "2026-09-07",
+            date: "7 September 2026",
+            theme: "Quieter source markers",
+            headline: "Three colors. Less visual noise.",
+            intro: "Detection frames now communicate with simple color styles instead of check or question badges. Tune each layer without changing how Nuncid finds tickets.",
+            items: [
+                ReleaseNoteItem(label: "Clear at a glance", detail: "Unchecked and checking IDs share gray dashes at 70% opacity. No-match IDs use a dark-gray frame and a 50% diagonal; verified matches use green with a 10% fill."),
+                ReleaseNoteItem(label: "Your own palette", detail: "Detection Frames settings provide independent outline, fill, and strike-through colors and opacity for all three states. Enable or disable the diagonal separately."),
+                ReleaseNoteItem(label: "Preview without waiting", detail: "See normal and selected frames before your next lookup. Changes apply to visible markers immediately, without rescanning or repeating a tracker request.")
+            ]
+        ),
+        ReleaseNote(
             version: "26.09.06.19.36.59",
             isoDate: "2026-09-06",
             date: "6 September 2026",

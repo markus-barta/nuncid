@@ -84,6 +84,9 @@ import SwiftUI
     @Published var explorationPreferences = ExplorationPreferences.load() {
         didSet { explorationPreferences.persist() }
     }
+    @Published var markerAppearancePreferences = MarkerAppearancePreferences.load() {
+        didSet { markerAppearancePreferences.persist() }
+    }
     @Published var presentationPreferences: PresentationPreferences { didSet { presentationPreferences.persist() } }
     @Published var popupInteractionPreferences: PopupInteractionPreferences {
         didSet {
@@ -766,12 +769,13 @@ private struct ShortcutRecorder: NSViewRepresentable {
 }
 
 private enum SettingsPane: String, CaseIterable, Identifiable {
-    case scanning, pinned, appearance, privacy
+    case scanning, markers, pinned, appearance, privacy
 
     var id: String { rawValue }
     var title: String {
         switch self {
         case .scanning: return "Scanning"
+        case .markers: return "Detection Frames"
         case .pinned: return "Pinned Card"
         case .appearance: return "Appearance"
         case .privacy: return "Privacy"
@@ -780,6 +784,7 @@ private enum SettingsPane: String, CaseIterable, Identifiable {
     var icon: String {
         switch self {
         case .scanning: return "viewfinder"
+        case .markers: return "rectangle.dashed"
         case .pinned: return "pin"
         case .appearance: return "paintbrush"
         case .privacy: return "hand.raised"
@@ -799,6 +804,7 @@ struct SettingsView: View {
 #if DEBUG
         if CommandLine.arguments.contains("--settings-appearance-probe") { _selection = State(initialValue: .appearance) }
         else if CommandLine.arguments.contains("--settings-pinned-probe") { _selection = State(initialValue: .pinned) }
+        else if CommandLine.arguments.contains("--settings-markers-probe") { _selection = State(initialValue: .markers) }
 #endif
     }
 
@@ -865,6 +871,7 @@ struct SettingsView: View {
     @ViewBuilder private var detail: some View {
         switch selection {
         case .scanning: scanningPage
+        case .markers: markersPage
         case .pinned: pinnedPage
         case .appearance: appearancePage
         case .privacy: privacyPage
@@ -883,7 +890,7 @@ struct SettingsView: View {
                 Text("Hovering prioritizes a pending ID and opens its cached card after this short delay.").font(.caption).foregroundStyle(.secondary)
                 Divider()
                 Stepper("Parallel lookups: \(state.explorationPreferences.parallelLookups)", value: $state.explorationPreferences.parallelLookups, in: 1...5)
-                Text("Nearest IDs first. Queued IDs are dotted, checking IDs blue, matches green, and unsuccessful lookups gray.").font(.caption).foregroundStyle(.secondary)
+                Text("Unchecked and checking IDs share gray dashes; unmatched IDs are dark gray with a diagonal; matches are green. Customize these in Detection Frames.").font(.caption).foregroundStyle(.secondary)
             }
 
             HStack(alignment: .top, spacing: 12) {
@@ -907,6 +914,16 @@ struct SettingsView: View {
                 Spacer()
                 Button("Restore Activation Defaults") { state.resetActivation(); recorderFeedback = .success("Activation defaults restored.") }
             }
+        }
+    }
+
+    private var markersPage: some View {
+        SettingsPage(title: "Detection Frames", subtitle: "Three quiet states. Colors, opacity, and diagonal strike-through are independent.") {
+            SettingsCard {
+                MarkerAppearanceEditor(preferences: $state.markerAppearancePreferences)
+            }
+            Text("Changes apply immediately to visible markers without rescanning. The preview uses local sample text; it never contacts a tracker.")
+                .font(.caption).foregroundStyle(.secondary)
         }
     }
 
