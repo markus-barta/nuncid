@@ -197,9 +197,9 @@ struct StatusPill: View {
     let state: String
     private var color: Color {
         switch state.lowercased() {
-        case "done", "accepted", "merged", "closed": return .green
+        case "done", "accepted", "merged", "closed", "success": return .green
         case "in-progress", "in_progress", "open": return .blue
-        case "blocked", "cancelled": return .red
+        case "blocked", "cancelled", "failure", "timed-out", "action-required": return .red
         default: return .secondary
         }
     }

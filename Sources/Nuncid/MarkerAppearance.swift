@@ -78,7 +78,7 @@ struct MarkerStyle: Codable, Equatable {
             outlineOpacity: opacity(outlineOpacity, fallback.outlineOpacity),
             fillColor: MarkerColor.normalized(fillColor) ?? fallback.fillColor,
             fillOpacity: opacity(fillOpacity, fallback.fillOpacity),
-            strikeThroughEnabled: strikeThroughEnabled,
+            strikeThroughEnabled: state == .missed && strikeThroughEnabled,
             strikeThroughColor: MarkerColor.normalized(strikeThroughColor) ?? fallback.strikeThroughColor,
             strikeThroughOpacity: opacity(strikeThroughOpacity, fallback.strikeThroughOpacity)
         )
@@ -125,10 +125,17 @@ extension Notification.Name {
 /// Shared by actual screen markers and the settings preview. Opacity belongs
 /// to each layer, not the whole frame: selected emphasis changes width only.
 @MainActor enum MarkerRenderer {
+    /// Keep the lower edge around descenders; add headroom only at the top.
+    /// Coordinates are AppKit screen points, independent of backing scale.
+    static func frame(for bounds: CGRect) -> CGRect {
+        let padded = bounds.insetBy(dx: -5, dy: -3)
+        return CGRect(x: padded.minX, y: padded.minY, width: padded.width, height: padded.height + 3)
+    }
+
     static func draw(bounds: CGRect, state: MarkerVisualState, selected: Bool, style: MarkerStyle) {
         guard !bounds.isEmpty, !bounds.isInfinite, !bounds.isNull else { return }
         let style = style.normalized(for: state)
-        let frame = bounds.insetBy(dx: -5, dy: -3)
+        let frame = frame(for: bounds)
         let path = NSBezierPath(roundedRect: frame, xRadius: 5, yRadius: 5)
         if style.fillOpacity > 0 {
             MarkerColor.nsColor(style.fillColor).withAlphaComponent(style.fillOpacity).setFill()
@@ -142,7 +149,7 @@ extension Notification.Name {
             MarkerColor.nsColor(style.outlineColor).withAlphaComponent(style.outlineOpacity).setStroke()
             path.stroke()
         }
-        if style.strikeThroughEnabled, style.strikeThroughOpacity > 0 {
+        if state == .missed, style.strikeThroughEnabled, style.strikeThroughOpacity > 0 {
             NSGraphicsContext.saveGraphicsState()
             path.addClip()
             let diagonal = NSBezierPath()
@@ -209,12 +216,17 @@ struct MarkerAppearanceEditor: View {
             layerRow("Outline", color: \.outlineColor, opacity: \.outlineOpacity)
             layerRow("Fill", color: \.fillColor, opacity: \.fillOpacity)
             Divider()
-            Toggle("Diagonal strike-through", isOn: Binding(
-                get: { preferences[selection].strikeThroughEnabled },
-                set: { preferences[selection].strikeThroughEnabled = $0 }
-            ))
-            layerRow("Strike-through", color: \.strikeThroughColor, opacity: \.strikeThroughOpacity)
-                .disabled(!preferences[selection].strikeThroughEnabled)
+            if selection == .missed {
+                Toggle("Diagonal strike-through", isOn: Binding(
+                    get: { preferences[selection].strikeThroughEnabled },
+                    set: { preferences[selection].strikeThroughEnabled = $0 }
+                ))
+                layerRow("Strike-through", color: \.strikeThroughColor, opacity: \.strikeThroughOpacity)
+                    .disabled(!preferences[selection].strikeThroughEnabled)
+            } else {
+                Text("Strike-through is only available for no-match results.")
+                    .font(.callout).foregroundStyle(.secondary)
+            }
             Text("Colors and opacity are independent for each layer. Selected IDs use a slightly thicker outline—not extra badges or glow.")
                 .font(.caption).foregroundStyle(.secondary)
             HStack {

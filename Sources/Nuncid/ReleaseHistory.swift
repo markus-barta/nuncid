@@ -21,6 +21,19 @@ struct ReleaseNote: Identifiable, Equatable {
 enum ReleaseHistory {
     static let notes: [ReleaseNote] = [
         ReleaseNote(
+            version: "26.09.07.13.25.21",
+            isoDate: "2026-09-07",
+            date: "7 September 2026",
+            theme: "The right reference, in context",
+            headline: "Numbers need meaning, not guesses.",
+            intro: "Nuncid now classifies local text before looking anything up. Times, percentages, counts, model names and paths no longer turn into unrelated ticket searches.",
+            items: [
+                ReleaseNoteItem(label: "Context before lookup", detail: "Explicit keys, PR labels, supported URLs and gh commands determine the reference type. Nearby context stays inside its text block and window; missing scope remains unresolved."),
+                ReleaseNoteItem(label: "Workflow runs, too", detail: "Repository-scoped GitHub Actions runs get their own preview with workflow, status, branch, commit, duration and link. No logs or artifacts are fetched."),
+                ReleaseNoteItem(label: "Room above the text", detail: "Detection frames gain 3 points of top headroom without moving their bottom edge. Only no-match results can use a diagonal; unchecked and verified matches never have a strike-through.")
+            ]
+        ),
+        ReleaseNote(
             version: "26.09.07.07.09.01",
             isoDate: "2026-09-07",
             date: "7 September 2026",

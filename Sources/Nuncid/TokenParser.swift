@@ -15,19 +15,29 @@ struct OCRContextFragment: Hashable, Sendable {
     let order: Int
     let confidence: Double?
     let region: OCRNormalizedRegion?
+    /// Window/block ownership when available; different groups never share context.
+    let contextGroup: Int?
+    let startClipped: Bool
+    let endClipped: Bool
 
     init(
         text: String,
         lineIndex: Int,
         order: Int,
         confidence: Double? = nil,
-        region: OCRNormalizedRegion? = nil
+        region: OCRNormalizedRegion? = nil,
+        contextGroup: Int? = nil,
+        startClipped: Bool = false,
+        endClipped: Bool = false
     ) {
         self.text = text
         self.lineIndex = lineIndex
         self.order = order
         self.confidence = confidence
         self.region = region
+        self.contextGroup = contextGroup
+        self.startClipped = startClipped
+        self.endClipped = endClipped
     }
 }
 
@@ -137,6 +147,21 @@ enum TokenParser {
 enum CandidatePlanner {
     static let ppmProjects: Set<String> = ["NUNCID", "GLINT", "HAUSV", "JANUS", "PHAROS", "PAI", "INSPR"]
     static let pmaProjects: Set<String> = ["START"]
+    static let issueURLTrackers: [String: Tracker] = ["pm.barta.cm": .ppm, "paimos.agm.ng": .pma]
+
+    /// Explicit GitHub CLI/URL scope only. Reject hosts, paths, shell syntax,
+    /// empty components and option-like owner names before constructing argv.
+    static func validatedGitHubRepo(_ raw: String) -> String? {
+        let value = raw.lowercased()
+        let parts = value.split(separator: "/", omittingEmptySubsequences: false)
+        guard parts.count == 2,
+              parts[0].range(of: #"^[a-z0-9](?:[a-z0-9-]{0,37}[a-z0-9])?$"#, options: .regularExpression) != nil,
+              parts[1].range(of: #"^[a-z0-9_.-]{1,100}$"#, options: .regularExpression) != nil,
+              parts[1] != ".", parts[1] != ".." else { return nil }
+        let repo = parts[1].hasSuffix(".git") ? String(parts[1].dropLast(4)) : String(parts[1])
+        guard !repo.isEmpty, repo != ".", repo != ".." else { return nil }
+        return "\(parts[0])/\(repo)"
+    }
 
     static func tracker(for project: String, context: ResolutionContext) -> Tracker {
         if pmaProjects.contains(project) { return .pma }

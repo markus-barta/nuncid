@@ -7,8 +7,10 @@ private struct ExplorationJob {
     let literal: String
     let primary: [CandidateSpec]
     let fallback: [CandidateSpec]
+    let contextReason: String
     var outcome: ExplorationOutcome = .queued
     var lines: [TicketLine] = []
+    var resolvedAt: Date?
 }
 
 private struct ExplorationOccurrence {
@@ -198,6 +200,13 @@ private final class ExplorationMarkerView: NSView {
     private func select(_ id: String, retry: Bool, near point: CGPoint) {
         guard var job = jobs[id] else { return }
         selected = id; promoted = id
+        if let spec = job.primary.first, case .workflowRun = spec,
+           job.outcome == .matched, let resolvedAt = job.resolvedAt,
+           Date().timeIntervalSince(resolvedAt) >= GitHubRunPreview.cacheLifetime(for: spec, line: job.lines.first) {
+            // Refresh stale run summaries on an explicit revisit, not an OCR
+            // timer or background log/artifact poll.
+            job.outcome = .queued; job.lines = []; jobs[id] = job
+        }
         if retry, job.outcome == .missed {
             job.outcome = .queued
             jobs[id] = job
@@ -219,7 +228,8 @@ private final class ExplorationMarkerView: NSView {
     private func present(_ job: ExplorationJob, near point: CGPoint) {
         let status: String?
         switch job.outcome {
-        case .queued, .resolving: status = "Checking \(job.literal)…"
+        case .queued, .resolving:
+            status = job.primary.isEmpty ? "\(job.literal) · \(job.contextReason). Add context or paste a complete reference." : "Checking \(job.literal)…"
         case .missed: status = "No match for \(job.literal) · Option + scroll to retry"
         case .matched: status = nil
         }
@@ -254,8 +264,8 @@ private final class ExplorationMarkerView: NSView {
     private func pump() {
         guard isActive else { return }
         let limit = ExplorationPreferences.load().parallelLookups
-        var pending = visibleJobIDs().filter { jobs[$0]?.outcome == .queued }
-        if let promoted, jobs[promoted]?.outcome == .queued { pending.insert(promoted, at: 0) }
+        var pending = visibleJobIDs().filter { jobs[$0]?.outcome == .queued && jobs[$0]?.primary.isEmpty == false }
+        if let promoted, jobs[promoted]?.outcome == .queued, jobs[promoted]?.primary.isEmpty == false { pending.insert(promoted, at: 0) }
         for id in ExplorationPolicy.dispatch(pending: pending, running: Set(workers.keys), promoted: promoted, limit: limit) {
             guard let job = jobs[id] else { continue }
             jobs[id]?.outcome = .resolving
@@ -266,12 +276,18 @@ private final class ExplorationMarkerView: NSView {
                 for phase in [job.primary, job.fallback] {
                     for spec in phase {
                         guard !Task.isCancelled else { return }
-                        if let line = await resolver.resolve(spec) { lines.append(line); break }
+                        if let line = await resolver.resolve(spec) {
+                            lines.append(TicketLine(key: line.key, state: line.state, title: line.title,
+                                source: line.source, metadata: [line.metadata, "Matched: \(job.contextReason)"].filter { !$0.isEmpty }.joined(separator: " · "),
+                                detail: line.detail, destination: line.destination, identity: line.id))
+                            break
+                        }
                     }
                     if !lines.isEmpty { break }
                 }
                 guard !Task.isCancelled, isActive, generation == sessionGeneration else { return }
                 jobs[id]?.lines = lines
+                jobs[id]?.resolvedAt = Date()
                 jobs[id]?.outcome = lines.isEmpty ? .missed : .matched
                 workers[id] = nil
                 if let selected, let completed = jobs[selected] { present(completed, near: focus) }
@@ -297,36 +313,52 @@ private final class ExplorationMarkerView: NSView {
             menuHeight: max(NSStatusBar.system.thickness, screen.safeAreaInsets.top))
         tiles = ExplorationPolicy.tiles(in: content, around: focus)
         let generation = geometryGeneration
-        let foreground = sourceIsOnDisplay(current) ? ForegroundApplicationContext.capture() : nil
-        let context = ResolutionContext.load()
-        let pinned = PinnedTicketContext.load(fallback: context)
-        let history = ResolutionHistoryStore.load()
         onStateChange?(true, selected.flatMap { jobs[$0]?.outcome } == .matched, "Exploring outward from pointer…")
         discovery = Task { [weak self] in
             guard let self else { return }
+            var contextReads = Set<String>()
             while !tiles.isEmpty {
                 guard !Task.isCancelled, isActive, generation == geometryGeneration else { return }
                 let tile = tiles.removeFirst()
                 guard let capture = CapturePlan.around(CGPoint(x: tile.midX, y: tile.midY), size: tile.size) else { continue }
-                let fragments = await ocr.recognizeFragments(plan: capture)
+                let windows = ScreenContextGeometry.windows(for: capture)
+                let recognized = await ocr.recognizeFragments(plan: capture)
                 guard !Task.isCancelled, generation == geometryGeneration else { return }
+                let fragments = recognized.filter { !self.overOwnWindow($0.screenBounds) && ScreenContextGeometry.owner(of: $0.screenBounds, windows: windows) != nil }
+                let captureBounds = capture.appKitRect(forQuartz: capture.rect)
                 let input = OCRContextInput(fragments: fragments.enumerated().map { index, fragment in
-                    OCRContextFragment(text: fragment.text, lineIndex: index, order: index, confidence: Double(fragment.confidence), region: OCRNormalizedRegion(x: fragment.normalizedBounds.minX, y: fragment.normalizedBounds.minY, width: fragment.normalizedBounds.width, height: fragment.normalizedBounds.height))
+                    let edgeMargin = max(3, fragment.screenBounds.width / CGFloat(max(1, fragment.text.count)))
+                    return OCRContextFragment(text: fragment.text, lineIndex: index, order: index,
+                        confidence: Double(fragment.confidence),
+                        region: OCRNormalizedRegion(x: fragment.normalizedBounds.minX, y: fragment.normalizedBounds.minY, width: fragment.normalizedBounds.width, height: fragment.normalizedBounds.height),
+                        contextGroup: ScreenContextGeometry.owner(of: fragment.screenBounds, windows: windows),
+                        startClipped: fragment.screenBounds.minX - captureBounds.minX < edgeMargin,
+                        endClipped: captureBounds.maxX - fragment.screenBounds.maxX < edgeMargin)
                 })
-                let tokens = TokenParser.parse(input).filter { $0.kind != .version }
-                let plan = await planner.plan(input: input, context: context, pinned: pinned, foreground: foreground, history: history, maximumCandidates: ExplorationPolicy.maximumCandidates)
+                let references = await planner.classifyScreen(input)
                 guard !Task.isCancelled, generation == geometryGeneration else { return }
-                for token in tokens {
-                    guard let anchor = ScanFeedbackAnchor(token: token, fragments: fragments), !overOwnWindow(anchor.bounds) else { continue }
-                    let equivalent = Set(tokens.filter { $0.raw.caseInsensitiveCompare(token.raw) == .orderedSame }.map(\.sourceOrder))
-                    let proposals = plan.proposals.filter { equivalent.contains($0.sourceOrder) }
-                    guard !proposals.isEmpty else { continue }
-                    let primary = proposals.filter { !$0.isKnownProjectFallback }.map(\.spec)
-                    let fallback = proposals.filter(\.isKnownProjectFallback).map(\.spec)
-                    let id = (primary.map(\.cacheKey) + ["fallback"] + fallback.map(\.cacheKey)).joined(separator: "|")
+                for reference in references where reference.isVisibleCandidate {
+                    let token = reference.token
+                    guard let anchor = ScanFeedbackAnchor(token: token, fragments: fragments), !overOwnWindow(anchor.bounds),
+                          ScreenContextGeometry.isCompleteIdentifier(anchor.bounds, in: capture.appKitRect(forQuartz: capture.rect)) else { continue }
+                    // Semantic identity, not literal equality: PR42 and run42 in
+                    // different repositories must never share a resolution job.
+                    let primary = reference.spec.map { [$0] } ?? []
+                    if primary.isEmpty, reference.category != .unknown, contextReads.count < 8 {
+                        let contextKey = "\(reference.category.rawValue):\(token.raw):\(Int(anchor.bounds.midX / 20)):\(Int(anchor.bounds.midY / 20))"
+                        if contextReads.insert(contextKey).inserted {
+                            // A command may be wider than a discovery tile. One
+                            // bounded horizontal context read can recover its
+                            // complete --repo value; never guess a cropped scope.
+                            let wider = CGRect(x: anchor.bounds.midX - 500, y: anchor.bounds.midY - 120,
+                                               width: 1_000, height: 240).intersection(content)
+                            if wider.width > 20, wider.height > 20 { tiles.insert(wider, at: 0) }
+                        }
+                    }
+                    let id = reference.spec?.cacheKey ?? "unresolved:\(reference.category.rawValue):\(anchor.id)"
                     if jobs[id] == nil {
                         guard jobs.count < ExplorationPolicy.maximumCandidates else { continue }
-                        jobs[id] = ExplorationJob(id: id, literal: token.raw, primary: primary, fallback: fallback)
+                        jobs[id] = ExplorationJob(id: id, literal: token.raw, primary: primary, fallback: [], contextReason: reference.reason)
                     }
                     let candidate = ExplorationOccurrence(jobID: id, anchor: anchor, confidence: token.confidence ?? 0)
                     if let index = occurrences.firstIndex(where: { ExplorationPolicy.sameOccurrence($0.anchor.bounds, anchor.bounds) }) {
@@ -334,7 +366,8 @@ private final class ExplorationMarkerView: NSView {
                         // one marker, preferring a verified result then confidence.
                         let previous = occurrences[index]
                         let verified = jobs[previous.jobID]?.outcome == .matched
-                        if !verified, candidate.confidence > previous.confidence {
+                        let strongerScope = jobs[previous.jobID]?.primary.isEmpty == true && !primary.isEmpty
+                        if strongerScope || (!verified && candidate.confidence > previous.confidence) {
                             occurrences[index] = candidate
                             if selected == previous.jobID { selected = id }
                         }

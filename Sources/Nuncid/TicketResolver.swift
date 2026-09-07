@@ -70,19 +70,28 @@ actor TicketResolver {
         self.lookupForTesting = lookupForTesting
         if lookupForTesting == nil, let data = UserDefaults.standard.data(forKey: defaultsKey),
            let decoded = try? JSONDecoder().decode([String: CacheEntry].self, from: data) { cache = decoded }
+        // Older PR cache records used only gh:#number as presentation identity.
+        // Scope that identity without discarding their useful cached content.
+        for (key, entry) in cache where key.hasPrefix("pr:") {
+            if let line = entry.line, line.id != key {
+                cache[key] = CacheEntry(line: TicketLine(key: line.key, state: line.state, title: line.title,
+                    source: line.source, metadata: line.metadata, detail: line.detail,
+                    destination: line.destination, identity: key), savedAt: entry.savedAt)
+            }
+        }
     }
 
     func resolve(_ spec: CandidateSpec) async -> TicketLine? {
         guard !Task.isCancelled else { return nil }
         if let entry = cache[spec.cacheKey] {
-            let ttl: TimeInterval = entry.line == nil ? 60 : 15 * 60
+            let ttl = GitHubRunPreview.cacheLifetime(for: spec, line: entry.line)
             if Date().timeIntervalSince(entry.savedAt) < ttl { return Task.isCancelled ? nil : entry.line }
         }
         // Different visible literals can propose the same tracker key. Share
         // the first result without letting cancellation of a waiter cancel its owner.
         while resolvingKeys.contains(spec.cacheKey) {
             do { try await Task.sleep(nanoseconds: 20_000_000) } catch { return nil }
-            if let entry = cache[spec.cacheKey], Date().timeIntervalSince(entry.savedAt) < (entry.line == nil ? 60 : 15 * 60) { return Task.isCancelled ? nil : entry.line }
+            if let entry = cache[spec.cacheKey], Date().timeIntervalSince(entry.savedAt) < GitHubRunPreview.cacheLifetime(for: spec, line: entry.line) { return Task.isCancelled ? nil : entry.line }
         }
         guard !Task.isCancelled else { return nil }
         resolvingKeys.insert(spec.cacheKey)
@@ -92,13 +101,14 @@ actor TicketResolver {
         defer { Task { await TrackerReadBudget.shared.release() } }
         guard !Task.isCancelled else { return nil }
         // Another waiter may have filled the cache while we waited for a slot.
-        if let entry = cache[spec.cacheKey], Date().timeIntervalSince(entry.savedAt) < (entry.line == nil ? 60 : 15 * 60) { return entry.line }
+        if let entry = cache[spec.cacheKey], Date().timeIntervalSince(entry.savedAt) < GitHubRunPreview.cacheLifetime(for: spec, line: entry.line) { return entry.line }
         let line: TicketLine?
         if let lookupForTesting { line = await lookupForTesting(spec) }
         else {
             switch spec {
             case let .issue(tracker, key): line = await resolveIssue(tracker: tracker, key: key)
             case let .pullRequest(number, repo): line = await resolvePullRequest(number: number, repo: repo)
+            case let .workflowRun(id, repo): line = await resolveWorkflowRun(id: id, repo: repo)
             }
         }
         // Cancellation is not a negative lookup and must never poison the miss cache.
@@ -218,8 +228,16 @@ actor TicketResolver {
             source: "gh",
             metadata: metadata,
             detail: Self.excerpt(pr.body),
-            destination: pr.url
+            destination: pr.url,
+            identity: CandidateSpec.pullRequest(number: number, repo: repo).cacheKey
         )
+    }
+
+    private func resolveWorkflowRun(id: Int, repo: String) async -> TicketLine? {
+        guard let arguments = GitHubRunPreview.arguments(id: id, repo: repo),
+              let executable = Self.findExecutable(named: "gh"),
+              let data = await Self.run(executable, arguments) else { return nil }
+        return GitHubRunPreview.line(data: data, id: id, repo: repo)
     }
 
     private func persist() {

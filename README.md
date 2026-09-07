@@ -1,9 +1,9 @@
 <p align="center">
-  <img src="docs/screenshots/hero-26.09.07.07.09.01.png" alt="Nuncid — point at a ticket and know what matters" width="100%">
+  <img src="docs/screenshots/hero-26.09.07.13.25.21.png" alt="Nuncid — point at a ticket and know what matters" width="100%">
 </p>
 
 <p align="center">
-  <a href="https://github.com/markus-barta/nuncid/releases/latest"><img src="https://img.shields.io/badge/release-26.09.07.07.09.01-0A84FF?style=flat-square" alt="Latest release 26.09.07.07.09.01"></a>
+  <a href="https://github.com/markus-barta/nuncid/releases/latest"><img src="https://img.shields.io/badge/release-26.09.07.13.25.21-0A84FF?style=flat-square" alt="Latest release 26.09.07.13.25.21"></a>
   <img src="https://img.shields.io/badge/macOS-13%2B-111827?style=flat-square&logo=apple" alt="macOS 13 or newer">
   <img src="https://img.shields.io/badge/Swift-5.10-F05138?style=flat-square&logo=swift&logoColor=white" alt="Swift 5.10">
   <img src="https://img.shields.io/badge/OCR-local-22C55E?style=flat-square" alt="Local OCR">
@@ -29,7 +29,7 @@
 Invoke Nuncid to start an **on-demand exploration session**. Apple Vision discovers ticket keys and numbers progressively outward from the pointer over the invoked display. Nearby candidates resolve first through your existing Paimos and GitHub sessions; hovering prioritizes a pending ID and opens its cached card. Nothing scans while the session is idle.
 
 <p align="center">
-  <img src="docs/screenshots/workflow-26.09.07.07.09.01.png" alt="Nuncid keeps the current ticket fixed between previous and next results" width="100%">
+  <img src="docs/screenshots/workflow-26.09.07.13.25.21.png" alt="Nuncid keeps the current ticket fixed between previous and next results" width="100%">
 </p>
 
 | Invoke anywhere | Keep context nearby | Navigate without friction |
@@ -42,7 +42,7 @@ All visible candidates use three quiet frame styles—no status badges:
 - **No verified match:** dark-gray outline with a diagonal strike-through at 50% opacity.
 - **Verified Paimos or GitHub match:** green outline with a 10% green fill.
 
-The selected source uses a slightly thicker outline, without changing your configured opacity or adding glow.
+The selected source uses a slightly thicker outline, without changing your configured opacity or adding glow. Frames have 3 extra screen points of headroom at the top; the bottom edge and OCR coordinates stay fixed.
 
 When you scroll, every row follows one continuous direction while the ticket key and first title line travel between NEXT, the fixed card, and PREVIOUS. Long titles remain on one line while moving, then reveal their wrapped lines after landing—so the card never jumps.
 
@@ -53,7 +53,7 @@ The pinned header keeps its grab handle, pin state, and result position centered
 The active source remains emphasized for as long as its card is visible. All candidates are marked during exploration—there is no pinned-only visibility switch. A pending selection shows “Checking…” rather than inventing ticket content.
 
 <p align="center">
-  <img src="docs/screenshots/lookup-highlight-26.09.07.07.09.01.png" alt="Three badge-free detection styles: gray dashes, dark-gray diagonal, and green fill" width="100%">
+  <img src="docs/screenshots/lookup-highlight-26.09.07.13.25.21.png" alt="Three badge-free detection styles: gray dashes, dark-gray diagonal, and green fill" width="100%">
 </p>
 
 Markers ignore mouse input, do not animate, and remain excluded from screen capture. Source scrolling or window/Space changes invalidate stale coordinates immediately. After a short settling delay, Nuncid rediscovers visible IDs and reanchors their markers while keeping the card and cached results. Off-screen IDs lose only their outline.
@@ -64,10 +64,10 @@ Left-click the menu icon to **choose where exploration begins**: leave the menu 
 
 Scanning settings expose the shortcut, **hover delay (default 100 ms, 0–500 ms)** and **parallel lookups (default 3, 1–5)**. Existing shortcuts and unrelated card preferences survive migration; an old Off mode leaves the shortcut disabled. Closing the card or pressing Escape stops exploration. Settings apply immediately, and appearance previews use only local sample data.
 
-**Detection Frames** settings configure each state's outline color/opacity and fill color/opacity. Strike-through has its own on/off toggle, color, and opacity for each state. Changes update visible markers immediately—without OCR or tracker requests. A local preview shows normal/selected frames; reset one state or all marker styles without resetting other preferences.
+**Detection Frames** settings configure each state's outline color/opacity and fill color/opacity. Strike-through is available **only for no-match results**, with its own on/off toggle, color, and opacity. Pending/checking and verified matches never have a diagonal, even if older saved settings enabled one. Changes update visible markers immediately—without OCR or tracker requests. A local preview shows normal/selected frames; reset one state or all marker styles without resetting other preferences.
 
 <p align="center">
-  <img src="docs/screenshots/settings-markers-26.09.07.07.09.01.png" alt="Detection frame colors, opacity, and independent diagonal strike-through settings" width="100%">
+  <img src="docs/screenshots/settings-markers-26.09.07.13.25.21.png" alt="Detection frame colors, opacity, and independent diagonal strike-through settings" width="100%">
 </p>
 
 | Idle | Exploring | Ticket found |
@@ -75,7 +75,7 @@ Scanning settings expose the shortcut, **hover delay (default 100 ms, 0–500 ms
 | <img src="docs/screenshots/menu-hover-off-0.3.2.png" alt="Dimmed Nuncid menu bar icon: hover is off" width="40"> | <img src="docs/screenshots/menu-hover-on-0.3.2.png" alt="Filled viewfinder menu bar icon: hover is on" width="40"> | <img src="docs/screenshots/menu-ticket-found-0.3.2.png" alt="Checkmark menu bar icon: ticket found" width="40"> |
 
 <p align="center">
-  <img src="docs/screenshots/settings-showcase-26.09.07.07.09.01.png" alt="Nuncid activation and spatial card appearance settings" width="100%">
+  <img src="docs/screenshots/settings-showcase-26.09.07.13.25.21.png" alt="Nuncid activation and spatial card appearance settings" width="100%">
 </p>
 
 Nuncid can show zero to six neighboring destinations and offers four text sizes, three presets plus a remembered Custom size, three content densities, and system or solid surfaces. Pinned Card settings retain the global scroll modifier and direct-entry controls. Cards adapt their content to the available space instead of forcing every ticket into the same dimensions.
@@ -85,16 +85,42 @@ Nuncid can show zero to six neighboring destinations and offers four text sizes,
 The app’s **Version History** explains each release in concise, positive human language. Open it from the menu, About window, or by clicking the version in Settings; your running version is always highlighted.
 
 <p align="center">
-  <img src="docs/screenshots/version-history-26.09.07.07.09.01.png" alt="Nuncid Version History with the current release highlighted and benefit-led notes" width="100%">
+  <img src="docs/screenshots/version-history-26.09.07.13.25.21.png" alt="Nuncid Version History with the current release highlighted and benefit-led notes" width="100%">
 </p>
 
 ## Smarter resolution, fewer wrong guesses
 
-Explicit evidence wins. Nuncid combines the shape and position of nearby OCR text with GitHub URLs, the foreground app and window, the pinned card, and short-lived per-app history. It resolves strong candidates first, tries weaker fallbacks only when needed, and never fabricates a “maybe” result.
+### Context-aware discovery
+
+Screen discovery now has a deterministic classification stage before lookup.
+Complete PR/run command syntax, supported GitHub/Paimos URLs and explicit project
+keys take precedence. Percentages, times, dates, quantities, counters, structural
+JSON values, paths and model-name fragments do not become automatic ticket lookups.
+Context is bounded to nearby text in the same geometric block and window; clipped
+crop-edge identifiers and incomplete repository names are withheld until complete context is available. At most eight targeted context rereads per viewport refresh can recover a command whose repository extends beyond a discovery tile.
+
+A plausible reference without a unique type/repository/project remains gray and
+unresolved. It does **not** trigger a broad namespace search, and Option retry does
+not invent missing scope. Add nearby context or paste a complete typed reference.
+Intentional pinned number entry remains separate and keeps its explicit project.
+
+GitHub Actions runs have their own identities and read-only summary adapter:
+`gh run view <id> --repo <validated-repository> --json <fixed-summary-fields>`.
+The preview includes title/workflow, status/conclusion, branch/commit, timing and
+link. No pictured command is executed and no logs/artifacts are downloaded. Active
+run summaries expire after30 seconds, completed runs after5 minutes; explicit
+revisits may refresh them, without background polling. Run/PR/repository cache
+identities are distinct. Pasted scoped PR/run commands and URLs use the same classification rules; pictured commands are never executed.
+
+<p align="center">
+  <img src="docs/screenshots/workflow-run-26.09.07.13.25.21.png" alt="GitHub workflow run summary with status, branch, commit, duration and link" width="70%">
+</p>
+
+Automatic discovery no longer uses global project history to turn unrelated numbers into tickets. Intentional pinned number/project entry remains available separately, and Nuncid never fabricates a “maybe” result.
 
 - Known PPM projects resolve through the `ppm` Paimos instance; `START` resolves through `pma`.
 - Explicit GitHub pull-request URLs route directly to their repository.
-- Bare numbers use nearby project text and foreground context before trying cautious fallbacks.
+- Bare numbers need attached reference evidence and a unique local scope; ordinary numbers receive no marker and no lookup.
 - GitHub lookups are limited to configured repositories or an explicit `github.com` URL. Ordinary OCR paths never become network targets.
 - Only high-confidence or directly confirmed context is learned; weak guesses are not.
 

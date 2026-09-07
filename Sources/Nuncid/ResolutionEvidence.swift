@@ -169,7 +169,7 @@ struct ApplicationResolutionHistory: Codable, Hashable, Sendable {
         let repo: String?
         switch decision.proposal.spec {
         case let .issue(value, _): tracker = value; repo = nil
-        case let .pullRequest(_, value): tracker = nil; repo = value
+        case let .pullRequest(_, value), let .workflowRun(_, value): tracker = nil; repo = value
         }
         let entry = Entry(
             bundleIdentifier: bundleIdentifier,
@@ -679,6 +679,11 @@ enum EvidenceCandidatePlanner {
 }
 
 actor TicketEvidencePlanner {
+    func classifyScreen(_ input: OCRContextInput) -> [ClassifiedScreenReference] {
+        guard !Task.isCancelled else { return [] }
+        return ScreenReferenceClassifier.classify(input)
+    }
+
     func plan(
         input: OCRContextInput,
         context: ResolutionContext,

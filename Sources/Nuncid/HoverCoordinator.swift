@@ -702,6 +702,10 @@ enum LookupHighlightVisibilityPolicy {
     }
 
     private func cycleProject(_ direction: Int) {
+        if overlay.selectedLine?.id.hasPrefix("run:") == true {
+            overlay.setInput("Workflow runs keep their GitHub repository; paste a scoped reference to switch")
+            return
+        }
         exploration.end()
         syncSelectionContext()
         guard let number = currentNumber else {
@@ -807,6 +811,35 @@ enum LookupHighlightVisibilityPolicy {
     }
 
     private func applyPaste(_ raw: String) {
+        let typed = ScreenReferenceClassifier.classify(OCRContextInput(lines: [raw])).filter {
+            $0.isVisibleCandidate && ($0.category == .workflowRun || $0.category == .pullRequest)
+        }
+        if !typed.isEmpty {
+            guard typed.count == 1, let reference = typed.first else {
+                overlay.setInput("Paste one complete reference at a time"); return
+            }
+            guard let spec = reference.spec else { overlay.setInput(reference.reason); return }
+            resetEditing(); directGeneration += 1
+            let generation = directGeneration
+            overlay.setInput("Checking \(reference.category.title) \(reference.token.raw)…")
+            editTask = Task { [weak self] in
+                guard let self else { return }
+                let line = await resolver.resolve(spec)
+                guard !Task.isCancelled, generation == directGeneration, overlay.isSticky else { return }
+                if let line {
+                    overlay.replacePinnedResults([line], selecting: line.key)
+                    overlay.setInput(nil); appState?.activity = line.title
+                } else {
+                    overlay.showPinnedStatus("No verified match for \(reference.token.raw)")
+                    appState?.activity = "No match"
+                }
+            }
+            return
+        }
+        if raw.range(of: #"(?i)\bgh\b|/actions/runs/|/pull/|\b(?:issue_id|user_id|reference_count)\s*[\"']?\s*:"#, options: .regularExpression) != nil {
+            overlay.setInput("Paste a complete supported reference with its repository; internal IDs are not ticket keys")
+            return
+        }
         guard let token = TokenParser.parse([raw.uppercased()]).first else {
             overlay.setInput("Paste did not contain a ticket"); NSSound.beep(); return
         }
