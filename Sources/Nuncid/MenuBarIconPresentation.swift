@@ -10,20 +10,20 @@ import AppKit
         switch HoverMenuBarState.resolve(mode: mode, hoverEnabled: hoverEnabled, matchFound: matchFound) {
         case .matchFound:
             button.image = NSImage(systemSymbolName: "checkmark.circle.fill", accessibilityDescription: nil)
-            button.setAccessibilityLabel("Nuncid, exploring, ticket found")
+            button.setAccessibilityLabel("Nuncid, detection on, ticket found")
         case .active:
             button.image = NSImage(systemSymbolName: "viewfinder.circle.fill", accessibilityDescription: nil)
-            button.setAccessibilityLabel("Nuncid, exploring")
+            button.setAccessibilityLabel("Nuncid, detection on")
         case .inactive:
             button.image = NuncidBrand.menuBarIcon
-            button.setAccessibilityLabel("Nuncid, exploration idle. Left-click to choose a starting point; right-click for Settings.")
+            button.setAccessibilityLabel("Nuncid, detection off. Left-click to turn on; right-click for Settings.")
         }
         button.image?.isTemplate = true
         // Reset on every transition too: no stale accent/green/label tint.
         button.contentTintColor = nil
-        button.toolTip = "Left-click to choose an ID (again to cancel) · Right-click for Settings"
+        button.toolTip = "Left-click to toggle detection · Right-click for Settings"
         button.setAccessibilityHelp(
-            "Left-click, then point at or click content to explore. A second click cancels an armed selection. Close the card or press Escape to end exploration; right-click for Settings."
+            "Left-click to toggle detection on or off. ON keeps the inspection window visible; OFF preserves a pinned window. Close stops detection and closes the window. Right-click for Settings."
         )
     }
 }

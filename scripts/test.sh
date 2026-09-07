@@ -10,5 +10,6 @@ trap 'rm -rf "$task_tmp_dir"' EXIT
 (
   cd "$task_tmp_dir"
   "$repo_dir/.build/debug/Nuncid" --self-test
+  "$repo_dir/.build/debug/Nuncid" --inspection-state-self-test
 )
 print 'Nuncid build, self-tests and calendar release-policy tests passed'

@@ -149,6 +149,8 @@ enum LookupHighlightVisibilityPolicy {
     private let scanFeedback = ScanFeedbackController()
     private let overlay: OverlayController
     private lazy var exploration = ExplorationSession(ocr: ocr, resolver: resolver, planner: evidencePlanner, overlay: overlay)
+    private var detection = DetectionMode()
+    private var detectionOrigin = NSEvent.mouseLocation
     private var timer: Timer?
     private var lastPosition = NSEvent.mouseLocation
     private var stableSince = Date()
@@ -205,11 +207,17 @@ enum LookupHighlightVisibilityPolicy {
             self?.exploration.externalContentMayMove()
         }
         overlay.onExploreNavigation = { [weak self] direction, includeMisses in
-            self?.exploration.navigate(direction, includeMisses: includeMisses) ?? false
+            guard let self else { return false }
+            directGeneration += 1; resetEditing()
+            return exploration.navigate(direction, includeMisses: includeMisses)
         }
-        exploration.onCloseRequested = { [weak self] in self?.closePinned() }
-        exploration.onStateChange = { [weak self] active, found, activity in
-            self?.appState?.setExplorationState(active: active, found: found, activity: activity)
+        exploration.onSelectionClaimed = { [weak self] in
+            guard let self else { return }
+            directGeneration += 1; resetEditing()
+        }
+        exploration.onPauseRequested = { [weak self] in self?.publishDetectionState(activity: "Detection paused · Waiting for capture access/display") }
+        exploration.onStateChange = { [weak self] _, found, activity in
+            self?.publishDetectionState(found: found, activity: activity)
         }
         overlay.onTogglePin = { [weak self] in self?.togglePinFromOverlay() }
         overlay.onPinStateChange = { [weak self] pinned in
@@ -238,10 +246,38 @@ enum LookupHighlightVisibilityPolicy {
     }
 
 #if DEBUG
-    func explorationDebugSnapshot() -> [String: Any] { exploration.debugSnapshot() }
+    func explorationDebugSnapshot() -> [String: Any] {
+        var snapshot = exploration.debugSnapshot()
+        snapshot["detectionEnabled"] = detection.enabled
+        snapshot["waitingForTarget"] = menuTargetSelection != nil
+        snapshot["pinned"] = overlay.isSticky
+        return snapshot
+    }
 #endif
 
-    func endExploration() { cancelMenuTargetSelection(); closePinned() }
+    func endExploration() { closePinned() }
+
+    func escapeInspection() {
+        if editState.hasInput {
+            if let project = editState.projectBeforeQuery { currentProject = project }
+            directGeneration += 1; resetEditing(); overlay.setInput(nil)
+        } else { stopDetection() }
+    }
+
+    private func publishDetectionState(found: Bool = false, activity: String) {
+        overlay.setDetectionEnabled(detection.enabled)
+        appState?.setExplorationState(active: detection.enabled, found: found, activity: activity)
+    }
+
+    private func stopDetection() {
+        detection.stop(); cancelMenuTargetSelection()
+        scanGeneration += 1; activeScanTask?.cancel(); pendingManualScan = nil
+        exploration.suspend()
+        if !detection.keepsWindow(pinned: overlay.isSticky) {
+            directGeneration += 1; resetEditing(); exploration.end(); overlay.hide()
+        }
+        publishDetectionState(activity: overlay.isSticky ? "Detection off · Pinned" : "Detection off")
+    }
 
     func clearCache() {
         endExploration()
@@ -259,6 +295,7 @@ enum LookupHighlightVisibilityPolicy {
     }
 
     func resetHoverActivation() {
+        detection.stop()
         exploration.end()
         cancelMenuTargetSelection()
         scanGeneration += 1
@@ -275,22 +312,31 @@ enum LookupHighlightVisibilityPolicy {
         appState?.activity = "Ready"
     }
 
-    /// Status-item invocation arms a target instead of capturing the status bar.
+    /// Both invocation paths toggle persistent intent; never capture menu numbers.
     func toggleMenuTargetSelection() -> Bool {
-        if menuTargetSelection != nil {
-            cancelMenuTargetSelection()
-            return false
-        }
-        scanGeneration += 1
-        activeScanTask?.cancel()
-        pendingManualScan = nil
-        clearManualInspection()
-        clearLookupHighlight()
-        if !exploration.isActive, !overlay.isSticky { overlay.hide() }
+        toggleDetection(at: NSEvent.mouseLocation, waitForTarget: true)
+        return detection.enabled
+    }
+
+    private func toggleDetection(at point: CGPoint, waitForTarget: Bool) {
+        if detection.enabled { stopDetection(); return }
+        detection.toggle(); detectionOrigin = point
+        scanGeneration += 1; directGeneration += 1
+        activeScanTask?.cancel(); pendingManualScan = nil
+        resetEditing(); clearManualInspection(); clearLookupHighlight()
+        if !overlay.isVisible { overlay.showExploration([], status: "Detection on · Point at an ID", near: point) }
+        overlay.setShortcutLabel(pinShortcutLabel)
+        publishDetectionState(activity: "Detection on · Point at an ID")
+        if waitForTarget || !eligibleDetectionTarget(point) { armDetectionTarget() }
+        else { resumeDetectionIfAvailable() }
+        if appState?.screenRecordingGranted != true { appState?.requestScreenRecording() }
+    }
+
+    private func armDetectionTarget() {
+        cancelMenuTargetSelection()
         menuTargetGeneration += 1
         let generation = menuTargetGeneration
-        menuTargetSelection = MenuBarTargetSelection(now: Date())
-        appState?.activity = "Point at an ID, or click it · Click Nuncid again to cancel"
+        menuTargetSelection = MenuBarTargetSelection(now: Date(), expires: false)
         // Mouse-only, passive observation: never swallow a target-app click or
         // request keyboard monitoring. Dwell works even without this monitor.
         menuTargetClickMonitor = NSEvent.addGlobalMonitorForEvents(matching: .leftMouseDown) { [weak self] _ in
@@ -300,7 +346,6 @@ enum LookupHighlightVisibilityPolicy {
                 _ = self.advanceMenuTargetSelection(at: position, clicked: true)
             }
         }
-        return true
     }
 
     func cancelMenuTargetSelection() {
@@ -311,18 +356,32 @@ enum LookupHighlightVisibilityPolicy {
         menuTargetClickMonitor = nil
         lastPosition = NSEvent.mouseLocation
         stableSince = Date()
-        appState?.activity = "Ready"
+    }
+
+    private func eligibleDetectionTarget(_ position: CGPoint) -> Bool {
+        let inContent = NSScreen.screens.contains { screen in
+            let height = max(NSStatusBar.system.thickness, screen.frame.maxY - screen.visibleFrame.maxY)
+            return ExplorationSession.displayIsAwake(screen) && MenuBarTargetSelection.isContent(position: position, screenFrame: screen.frame, menuHeight: height)
+        }
+        return inContent && !NSApp.windows.contains { !$0.ignoresMouseEvents && $0.isVisible && $0.frame.contains(position) }
+    }
+
+    private func resumeDetectionIfAvailable() {
+        guard detection.enabled, !exploration.automaticEnabled, menuTargetSelection == nil else { return }
+        guard appState?.screenRecordingGranted == true else {
+            publishDetectionState(activity: "Detection paused · Screen Recording required"); return
+        }
+        if !NSScreen.screens.contains(where: { $0.frame.contains(detectionOrigin) }) {
+            detectionOrigin = NSEvent.mouseLocation
+            if !eligibleDetectionTarget(detectionOrigin) { armDetectionTarget(); return }
+        }
+        exploration.start(at: detectionOrigin)
+        if !exploration.automaticEnabled { publishDetectionState(activity: "Detection paused · Display unavailable") }
     }
 
     private func advanceMenuTargetSelection(at position: CGPoint, clicked: Bool = false) -> Bool {
         guard var selection = menuTargetSelection else { return false }
-        let inContent = NSScreen.screens.contains { screen in
-            let menuHeight = max(NSStatusBar.system.thickness, screen.frame.maxY - screen.visibleFrame.maxY)
-            return MenuBarTargetSelection.isContent(position: position, screenFrame: screen.frame,
-                                                     menuHeight: menuHeight)
-        }
-        let overOwnWindow = NSApp.windows.contains { !$0.ignoresMouseEvents && $0.isVisible && $0.frame.contains(position) }
-        let decision = selection.update(position: position, eligible: inContent && !overOwnWindow,
+        let decision = selection.update(position: position, eligible: eligibleDetectionTarget(position),
                                         now: Date(), clicked: clicked,
                                         permissionGranted: appState?.screenRecordingGranted == true)
         menuTargetSelection = selection
@@ -331,24 +390,17 @@ enum LookupHighlightVisibilityPolicy {
         case .cancelled: cancelMenuTargetSelection()
         case let .scan(target):
             cancelMenuTargetSelection() // Consume ownership before OCR or another mouse event.
-            performInspectCommand(at: target)
+            detectionOrigin = target
+            resumeDetectionIfAvailable()
         }
         return true
     }
 
     func performInspectCommand(at target: CGPoint? = nil) {
-        cancelMenuTargetSelection()
-        guard appState?.screenRecordingGranted == true else {
-            appState?.requestScreenRecording(); return
-        }
-        scanGeneration += 1; directGeneration += 1
-        activeScanTask?.cancel(); pendingManualScan = nil
-        resetEditing(); clearManualInspection(); clearLookupHighlight()
-        exploration.start(at: target ?? NSEvent.mouseLocation)
+        toggleDetection(at: target ?? NSEvent.mouseLocation, waitForTarget: false)
     }
 
     func performPinCommand() {
-        cancelMenuTargetSelection()
         let state: PanelInteractionState = overlay.isSticky
             ? (overlay.isActive ? .pinnedActive : .pinnedInactive)
             : (overlay.isVisible ? .temporary : .hidden)
@@ -356,7 +408,7 @@ enum LookupHighlightVisibilityPolicy {
         if PinCommandPolicy.clearsManualInspection(for: action) { clearManualInspection() }
         switch action {
         case .closePinned:
-            closePinned(); return
+            togglePinFromOverlay(); return
         case .focusPinned:
             overlay.focusPinned()
             appState?.activity = overlay.selectedLine.map { "Pinned · \($0.title)" } ?? "Pinned navigator"
@@ -379,8 +431,7 @@ enum LookupHighlightVisibilityPolicy {
             appState?.requestScreenRecording()
             return
         }
-        performInspectCommand()
-        if !exploration.isActive { overlay.showPinnedStatus("Choose an available display and invoke exploration") }
+        if !detection.enabled { performInspectCommand() }
     }
 
     private func tick() {
@@ -390,20 +441,16 @@ enum LookupHighlightVisibilityPolicy {
             if appState?.screenRecordingGranted != granted {
                 appState?.screenRecordingGranted = granted
                 if !granted {
-                    exploration.end()
-                    scanGeneration += 1
-                    activeScanTask?.cancel()
-                    pendingManualScan = nil
-                    cancelMenuTargetSelection()
-                    clearManualInspection()
+                    exploration.suspend(clearAnchors: true)
+                    scanGeneration += 1; activeScanTask?.cancel(); pendingManualScan = nil
                     clearLookupHighlight()
-                    if !overlay.isSticky { overlay.hide() }
-                    appState?.activity = overlay.isSticky ? "Pinned navigator" : "Ready"
+                    publishDetectionState(activity: detection.enabled ? "Detection paused · Screen Recording required" : "Detection off")
                 }
             }
             lastPermissionPollAt = Date()
         }
         if advanceMenuTargetSelection(at: NSEvent.mouseLocation) { return }
+        resumeDetectionIfAvailable()
         if exploration.isActive { exploration.tick(); return }
         // No unsolicited hover scans after upgrading from any legacy mode.
         guard overlay.isSticky else { return }
@@ -684,6 +731,7 @@ enum LookupHighlightVisibilityPolicy {
         if overlay.isSticky {
             resetEditing()
             overlay.unpin()
+            if !detection.keepsWindow(pinned: false) { closePinned(); return }
             refreshLookupHighlight()
             clearManualInspection()
             temporaryHideDeadline = nil
@@ -706,7 +754,8 @@ enum LookupHighlightVisibilityPolicy {
             overlay.setInput("Workflow runs keep their GitHub repository; paste a scoped reference to switch")
             return
         }
-        exploration.end()
+        exploration.holdPresentation()
+        directGeneration += 1; resetEditing()
         syncSelectionContext()
         guard let number = currentNumber else {
             overlay.setInput("Type a ticket number first"); return
@@ -739,7 +788,7 @@ enum LookupHighlightVisibilityPolicy {
 
     private func handleInput(_ event: PinnedInputEvent) {
         if eventClaimsPinnedResults(event) {
-            exploration.end()
+            exploration.holdPresentation()
             pinnedEditGeneration += 1
             directGeneration += 1
             claimPinnedInputOwnershipIfNeeded()
@@ -766,10 +815,7 @@ enum LookupHighlightVisibilityPolicy {
         case .submit:
             editTask?.cancel(); commitEditing()
         case .escape:
-            if editState.hasInput {
-                if let projectBeforeQuery = editState.projectBeforeQuery { currentProject = projectBeforeQuery }
-                resetEditing(); overlay.setInput(nil)
-            } else { closePinned() }
+            escapeInspection()
         case let .paste(value):
             applyPaste(value)
         }
@@ -825,7 +871,7 @@ enum LookupHighlightVisibilityPolicy {
             editTask = Task { [weak self] in
                 guard let self else { return }
                 let line = await resolver.resolve(spec)
-                guard !Task.isCancelled, generation == directGeneration, overlay.isSticky else { return }
+                guard !Task.isCancelled, generation == directGeneration, overlay.isVisible else { return }
                 if let line {
                     overlay.replacePinnedResults([line], selecting: line.key)
                     overlay.setInput(nil); appState?.activity = line.title
@@ -874,7 +920,7 @@ enum LookupHighlightVisibilityPolicy {
         let foreground = ForegroundApplicationContext.capture()
         editTask = Task {
             let resolved = await resolver.resolve(plan).first
-            guard !Task.isCancelled, generation == directGeneration, overlay.isSticky else { return }
+            guard !Task.isCancelled, generation == directGeneration, overlay.isVisible else { return }
             if let resolved,
                case let .issue(tracker, _) = resolved.proposal.spec {
                 let line = resolved.line
@@ -919,6 +965,7 @@ enum LookupHighlightVisibilityPolicy {
     }
 
     private func closePinned() {
+        detection.stop(); cancelMenuTargetSelection()
         exploration.end()
         clearManualInspection()
         pendingManualScan = nil

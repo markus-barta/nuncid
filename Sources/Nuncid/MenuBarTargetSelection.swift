@@ -1,8 +1,8 @@
 import Foundation
 
-/// No capture occurs here. A menu-bar click grants one scan only after the
-/// pointer reaches eligible content. The caller consumes the selection before
-/// starting asynchronous OCR, so dwell and click cannot launch duplicate work.
+/// No capture occurs here. Select one initial content target before starting
+/// detection; consuming it prevents duplicate dwell/click starts. Persistent
+/// detection disables expiry and keeps waiting through permission pauses.
 struct MenuBarTargetSelection {
     enum Decision: Equatable {
         case waiting
@@ -16,16 +16,21 @@ struct MenuBarTargetSelection {
     static let timeout: TimeInterval = 15
     static let settleDuration: TimeInterval = 0.35
     private let startedAt: Date
+    private let expires: Bool
     private var anchor: CGPoint?
     private var stableSince: Date?
     private var finished = false
 
-    init(now: Date) { startedAt = now }
+    init(now: Date, expires: Bool = true) { startedAt = now; self.expires = expires }
 
     mutating func update(position: CGPoint, eligible: Bool, now: Date,
                          clicked: Bool = false, permissionGranted: Bool = true) -> Decision {
         guard !finished else { return .cancelled }
-        guard permissionGranted, now.timeIntervalSince(startedAt) < Self.timeout else {
+        if !expires, !permissionGranted {
+            anchor = nil; stableSince = nil
+            return .waiting
+        }
+        guard permissionGranted, !expires || now.timeIntervalSince(startedAt) < Self.timeout else {
             finished = true
             return .cancelled
         }
