@@ -32,24 +32,13 @@ enum ExplorationOutcome: Equatable {
     case queued, resolving, matched, missed
 
     func isNavigable(includeMisses: Bool) -> Bool { self != .missed || includeMisses }
-    var color: NSColor {
+    var markerState: MarkerVisualState {
         switch self {
-        case .queued: return .secondaryLabelColor
-        case .resolving: return .systemBlue
-        case .matched: return .systemGreen
-        case .missed: return .tertiaryLabelColor
+        case .queued, .resolving: return .unchecked
+        case .matched: return .matched
+        case .missed: return .missed
         }
     }
-    var dash: [CGFloat] {
-        switch self {
-        case .queued: return [2, 4]
-        case .resolving: return [4, 3]
-        case .matched: return []
-        case .missed: return [1, 3]
-        }
-    }
-    var showsCheck: Bool { self == .matched }
-    var showsQuestion: Bool { self == .missed }
 }
 
 enum PopupScrollPresentationPolicy {
