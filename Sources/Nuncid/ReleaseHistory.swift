@@ -21,6 +21,19 @@ struct ReleaseNote: Identifiable, Equatable {
 enum ReleaseHistory {
     static let notes: [ReleaseNote] = [
         ReleaseNote(
+            version: "26.09.07.17.32.24",
+            isoDate: "2026-09-07",
+            date: "7 September 2026",
+            theme: "Inspection that stays with you",
+            headline: "Turn it on. Keep it in view.",
+            intro: "Detection now stays on until you turn it off. One consistent inspection window keeps your controls in place, with magnification that fits your display.",
+            items: [
+                ReleaseNoteItem(label: "A true toggle", detail: "The menu icon and activation shortcut turn detection on or off. ON keeps the window visible; OFF preserves a pinned window. Escape clears input first, while Close always closes."),
+                ReleaseNoteItem(label: "One familiar header", detail: "Pinning no longer changes the layout. The permanent top-right pin is quiet gray when unpinned and tilted and pressed in when pinned. Typing and browsing do not stop discovery."),
+                ReleaseNoteItem(label: "Your view, at your scale", detail: "Remember 30–300% zoom in 10-point steps, or click the percentage to reset to 100%. Content magnifies together; the header stays usable and oversized content scrolls within the display’s usable area.")
+            ]
+        ),
+        ReleaseNote(
             version: "26.09.07.13.25.21",
             isoDate: "2026-09-07",
             date: "7 September 2026",

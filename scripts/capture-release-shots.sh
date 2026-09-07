@@ -28,6 +28,9 @@ capture_probe() {
 }
 
 capture_probe pinned-card --overlay-probe --overlay-stress-probe --overlay-capture-probe
+capture_probe inspection-unpinned --overlay-probe --overlay-stress-probe --overlay-temporary-probe --overlay-capture-probe
+capture_probe inspection-zoom30 --overlay-probe --overlay-stress-probe --overlay-zoom-probe 30 --overlay-capture-probe
+capture_probe inspection-zoom300 --overlay-probe --overlay-stress-probe --overlay-zoom-probe 300 --overlay-capture-probe
 capture_probe workflow-run --overlay-probe --overlay-run-probe --overlay-capture-probe
 capture_probe lookup-highlight --lookup-highlight-capture-probe
 capture_probe settings-scanning --settings-capture-probe
@@ -37,7 +40,7 @@ capture_probe settings-appearance --settings-appearance-probe --settings-capture
 capture_probe version-history --version-history-probe --version-history-capture-probe
 capture_probe version-history-dark --version-history-probe --version-history-dark-probe --version-history-capture-probe
 
-for stem in pinned-card workflow-run lookup-highlight settings-scanning settings-markers settings-pinned settings-appearance version-history version-history-dark; do
+for stem in pinned-card inspection-unpinned inspection-zoom30 inspection-zoom300 workflow-run lookup-highlight settings-scanning settings-markers settings-pinned settings-appearance version-history version-history-dark; do
   mv "$capture_dir/$stem-$version.png" "$screenshots/$stem-$version.png"
 done
 print -r -- "Captured Nuncid $version release visuals"

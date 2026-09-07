@@ -951,6 +951,10 @@ private struct OverlayRootView: View {
         panel = FocusablePanel(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel, .resizable], backing: .buffered, defer: false)
         super.init()
 #if DEBUG
+        if let index = CommandLine.arguments.firstIndex(of: "--overlay-zoom-probe"),
+           CommandLine.arguments.indices.contains(index + 1), let percent = Int(CommandLine.arguments[index + 1]) {
+            zoom = InspectionZoom(percent) // Presentation-only; never persist capture-probe settings.
+        }
         if CommandLine.arguments.contains("--overlay-stress-probe") {
             presentationPreferences.alternativePreviews = 6
         }

@@ -499,6 +499,7 @@ import SwiftUI
                 TicketLine(key: "NUNCID-33", state: "done", title: "Pin without racing the popup", source: "ppm", metadata: "ticket · high priority", detail: "Move into the card and pin it directly.")
             ]
             let point = NuncidWindowPlacement.probeScreen.map { CGPoint(x: $0.visibleFrame.midX, y: $0.visibleFrame.midY) } ?? NSEvent.mouseLocation
+            overlay.setDetectionEnabled(true)
             overlay.show(lines, near: point, shortcutLabel: "⌥⇧Space")
             if !CommandLine.arguments.contains("--overlay-temporary-probe") {
                 overlay.pin(shortcutLabel: "⌥⇧Space")
