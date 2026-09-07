@@ -10,25 +10,20 @@ import AppKit
         switch HoverMenuBarState.resolve(mode: mode, hoverEnabled: hoverEnabled, matchFound: matchFound) {
         case .matchFound:
             button.image = NSImage(systemSymbolName: "checkmark.circle.fill", accessibilityDescription: nil)
-            button.setAccessibilityLabel("Nuncid, hover on, ticket found")
+            button.setAccessibilityLabel("Nuncid, exploring, ticket found")
         case .active:
             button.image = NSImage(systemSymbolName: "viewfinder.circle.fill", accessibilityDescription: nil)
-            button.setAccessibilityLabel("Nuncid, hover on")
+            button.setAccessibilityLabel("Nuncid, exploring")
         case .inactive:
             button.image = NuncidBrand.menuBarIcon
-            let label = mode == .off
-                ? "Nuncid, scanning off. Left-click to choose an ID; right-click for Settings."
-                : (mode == .pressToScan
-                    ? "Nuncid, press to scan. Left-click to choose an ID; right-click for Settings."
-                    : "Nuncid, hover off. Left-click to choose an ID; right-click for Settings.")
-            button.setAccessibilityLabel(label)
+            button.setAccessibilityLabel("Nuncid, exploration idle. Left-click to choose a starting point; right-click for Settings.")
         }
         button.image?.isTemplate = true
         // Reset on every transition too: no stale accent/green/label tint.
         button.contentTintColor = nil
         button.toolTip = "Left-click to choose an ID (again to cancel) · Right-click for Settings"
         button.setAccessibilityHelp(
-            "Left-click, then point at or click an ID to scan once. Click Nuncid again to cancel; right-click for Settings."
+            "Left-click, then point at or click content to explore. A second click cancels an armed selection. Close the card or press Escape to end exploration; right-click for Settings."
         )
     }
 }

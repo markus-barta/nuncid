@@ -22,7 +22,7 @@ private func nuncidHotKeyHandler(_: EventHandlerCallRef?, event: EventRef?, user
 }
 
 @MainActor final class GlobalHotKeyMonitor {
-    enum Command: UInt32, CaseIterable { case inspect = 1, pin = 2 }
+    enum Command: UInt32, CaseIterable { case inspect = 1, pin = 2, cancel = 3 }
 
     var onCommand: ((Command) -> Void)?
     private(set) var errors: [Command: String] = [:]
@@ -52,6 +52,13 @@ private func nuncidHotKeyHandler(_: EventHandlerCallRef?, event: EventRef?, user
         errors.removeAll()
         register(inspect, command: .inspect)
         register(pin, command: .pin)
+    }
+
+    func configureCancellation(enabled: Bool) {
+        if enabled, references[.cancel] != nil { return }
+        if let reference = references.removeValue(forKey: .cancel) { UnregisterEventHotKey(reference) }
+        errors.removeValue(forKey: .cancel)
+        if enabled { register(HotKey(keyCode: UInt32(kVK_Escape), modifiers: [], keyLabel: "Esc"), command: .cancel) }
     }
 
     fileprivate func invoke(id: UInt32) {

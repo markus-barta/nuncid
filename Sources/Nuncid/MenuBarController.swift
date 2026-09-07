@@ -419,35 +419,13 @@ enum CanonicalReleaseChecker {
         menu.addItem(.separator())
 
         addDisabledItem(state.screenRecordingGranted ? state.activity : "Screen Recording required", to: menu)
-        if state.activationPreferences.mode == .toggleHover {
-            let title = state.hoverScanningEnabled
-                ? (state.hoverMatchFound ? "Hover On · Ticket Found" : "Hover On")
-                : "Hover Off"
-            addDisabledItem(title, image: state.hoverMatchFound
-                ? "checkmark.circle.fill"
-                : (state.hoverScanningEnabled ? "circle.inset.filled" : "circle"), to: menu)
-            addActionItem(state.hoverScanningEnabled ? "Turn Hover Off" : "Turn Hover On", to: menu) { [weak state] in
-                state?.performActivationCommand()
-            }
-        }
+        addDisabledItem(state.hoverScanningEnabled ? "Exploration active" : "On-demand · Idle", image: state.hoverScanningEnabled ? "circle.inset.filled" : "circle", to: menu)
         if let hotKeyError = state.hotKeyError {
             addDisabledItem(hotKeyError, image: "exclamationmark.triangle.fill", to: menu)
         } else {
             if let inspect = state.inspectHotKey { addDisabledItem("Activation: \(inspect.label)", to: menu) }
             if let pin = state.pinHotKey { addDisabledItem("Pin: \(pin.label)", to: menu) }
         }
-        menu.addItem(.separator())
-
-        let shortcutMenu = NSMenu()
-        for mode in HoverActivationMode.allCases {
-            let item = addActionItem(mode.title, to: shortcutMenu) { [weak state] in
-                state?.activationPreferences.mode = mode
-            }
-            item.state = state.activationPreferences.mode == mode ? .on : .off
-        }
-        let shortcutItem = NSMenuItem(title: "Shortcut behavior", action: nil, keyEquivalent: "")
-        shortcutItem.submenu = shortcutMenu
-        menu.addItem(shortcutItem)
         menu.addItem(.separator())
 
         if !state.screenRecordingGranted {
@@ -467,7 +445,7 @@ enum CanonicalReleaseChecker {
         let currentVersion = NuncidBrand.version
         let installed = NuncidBrand.versionScheme.flatMap {
             ReleaseIdentity(rawVersion: currentVersion, scheme: $0,
-                            sequence: Bundle.main.object(forInfoDictionaryKey: "NuncidReleaseSequence") as? Int)
+                            sequence: NuncidBrand.releaseSequence)
         }
         updateTask = Task { [weak self] in
             let result = await CanonicalReleaseChecker.check(installed: installed)
@@ -504,7 +482,7 @@ enum CanonicalReleaseChecker {
         matchFound: Bool
     ) {
         guard let button = statusItem.button else { return }
-        MenuBarIconPresentation.apply(to: button, mode: mode,
+        MenuBarIconPresentation.apply(to: button, mode: .toggleHover,
                                       hoverEnabled: hoverEnabled, matchFound: matchFound)
     }
 

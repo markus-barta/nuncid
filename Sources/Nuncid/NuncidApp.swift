@@ -38,17 +38,25 @@ import SwiftUI
         result.isTemplate = true
         return result
     }
-    static var version: String {
-#if DEBUG
-        if let sourceVersion = try? String(contentsOfFile: "VERSION", encoding: .utf8)
-            .trimmingCharacters(in: .whitespacesAndNewlines),
-           !sourceVersion.isEmpty {
-            return sourceVersion
+    static let releaseRecord: ReleaseBuildRecord? = {
+        for bundle in resourceBundles {
+            if let url = bundle.url(forResource: "Release", withExtension: "json"),
+               let data = try? Data(contentsOf: url),
+               let record = try? JSONDecoder().decode(ReleaseBuildRecord.self, from: data),
+               record.identity != nil { return record }
         }
-#endif
-        return Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
-            ?? (try? String(contentsOfFile: "VERSION", encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines))
+        return nil
+    }()
+
+    static var version: String {
+        Bundle.main.object(forInfoDictionaryKey: "NuncidCanonicalVersion") as? String
+            ?? releaseRecord?.version
+            ?? Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
             ?? "Development"
+    }
+
+    static var releaseSequence: Int? {
+        Bundle.main.object(forInfoDictionaryKey: "NuncidReleaseSequence") as? Int ?? releaseRecord?.release_sequence
     }
 
     /// Explicit version-scheme metadata for this build. Packaged builds carry
@@ -58,12 +66,7 @@ import SwiftUI
         if let raw = Bundle.main.object(forInfoDictionaryKey: "NuncidVersionScheme") as? String {
             return VersionScheme.parse(raw)
         }
-#if DEBUG
-        if version != "Development", let classified = ReleaseIdentity.unclassified(version) {
-            return classified.scheme
-        }
-#endif
-        return nil
+        return releaseRecord.flatMap { VersionScheme.parse($0.version_scheme) }
     }
 }
 
@@ -77,6 +80,9 @@ import SwiftUI
                 coordinator?.resetHoverActivation()
             }
         }
+    }
+    @Published var explorationPreferences = ExplorationPreferences.load() {
+        didSet { explorationPreferences.persist() }
     }
     @Published var presentationPreferences: PresentationPreferences { didSet { presentationPreferences.persist() } }
     @Published var popupInteractionPreferences: PopupInteractionPreferences {
@@ -100,6 +106,7 @@ import SwiftUI
     private var versionHistoryWindowController: VersionHistoryWindowController?
 
     init() {
+        ExplorationPreferences.migrateShortcutIfNeeded()
         let preferences = NuncidPreferences.load()
         var activation = ActivationPreferences.load()
         var presentation = PresentationPreferences.load()
@@ -134,6 +141,7 @@ import SwiftUI
             switch command {
             case .inspect: self.performActivationCommand()
             case .pin: self.coordinator.performPinCommand()
+            case .cancel: self.coordinator.endExploration()
             }
         }
         configureHotKeys()
@@ -176,7 +184,7 @@ import SwiftUI
         if settingsWindowController == nil { settingsWindowController = SettingsWindowController(state: self) }
         settingsWindowController?.showWindow(nil)
         settingsWindowController?.window?.makeKeyAndOrderFront(nil)
-        NSApp.activate(ignoringOtherApps: true)
+        if NuncidWindowPlacement.probeScreen == nil { NSApp.activate(ignoringOtherApps: true) }
 #if DEBUG
         if let index = CommandLine.arguments.firstIndex(of: "--settings-capture-probe"),
            CommandLine.arguments.indices.contains(index + 1) {
@@ -193,7 +201,7 @@ import SwiftUI
         }
         aboutWindowController?.showWindow(nil)
         aboutWindowController?.window?.makeKeyAndOrderFront(nil)
-        NSApp.activate(ignoringOtherApps: true)
+        if NuncidWindowPlacement.probeScreen == nil { NSApp.activate(ignoringOtherApps: true) }
 #if DEBUG
         if let index = CommandLine.arguments.firstIndex(of: "--about-capture-probe"),
            CommandLine.arguments.indices.contains(index + 1) {
@@ -208,7 +216,7 @@ import SwiftUI
         if versionHistoryWindowController == nil { versionHistoryWindowController = VersionHistoryWindowController() }
         versionHistoryWindowController?.showWindow(nil)
         versionHistoryWindowController?.window?.makeKeyAndOrderFront(nil)
-        NSApp.activate(ignoringOtherApps: true)
+        if NuncidWindowPlacement.probeScreen == nil { NSApp.activate(ignoringOtherApps: true) }
 #if DEBUG
         if let index = CommandLine.arguments.firstIndex(of: "--version-history-capture-probe"),
            CommandLine.arguments.indices.contains(index + 1) {
@@ -222,29 +230,18 @@ import SwiftUI
     func resetActivation() {
         inspectHotKey = .inspect
         activationPreferences = .defaults
+        explorationPreferences = ExplorationPreferences()
     }
     func resetPinHotKey() { pinHotKey = .pin }
     func resetAppearance() { presentationPreferences = .defaults }
 
+#if DEBUG
+    func explorationDebugSnapshot() -> [String: Any] { coordinator.explorationDebugSnapshot() }
+    func performExplorationProbe(at point: CGPoint) { coordinator.performInspectCommand(at: point) }
+#endif
+
     func performActivationCommand() {
-        coordinator.cancelMenuTargetSelection()
-        switch ActivationShortcutPolicy.action(for: activationPreferences.mode) {
-        case .none:
-            activity = "Scanning off"
-        case .toggleHover:
-            if !hoverScanningEnabled && !screenRecordingGranted {
-                requestScreenRecording()
-                guard screenRecordingGranted else {
-                    activity = "Screen Recording required"
-                    return
-                }
-            }
-            hoverScanningEnabled.toggle()
-            hoverMatchFound = false
-            coordinator.setHoverScanningEnabled(hoverScanningEnabled)
-        case .scanOnce:
-            coordinator.performInspectCommand()
-        }
+        coordinator.performInspectCommand()
     }
 
     /// A status-item click arms one target selection. Shortcuts remain immediate;
@@ -261,12 +258,20 @@ import SwiftUI
 
     func cancelMenuBarScan() { coordinator.cancelMenuTargetSelection() }
 
+    func setExplorationState(active: Bool, found: Bool, activity: String) {
+        hotKeyMonitor.configureCancellation(enabled: active)
+        hoverScanningEnabled = active
+        hoverMatchFound = active && found
+        self.activity = activity
+    }
+
     func setHoverMatchFound(_ found: Bool) {
-        hoverMatchFound = activationPreferences.mode == .toggleHover && hoverScanningEnabled && found
+        hoverMatchFound = hoverScanningEnabled && found
     }
 
     private func configureHotKeys() {
         guard coordinator != nil else { return }
+        defer { hotKeyMonitor.configureCancellation(enabled: hoverScanningEnabled) }
         if NuncidPreferences.shortcutsConflict(inspect: inspectHotKey, pin: pinHotKey), let inspectHotKey {
             hotKeyMonitor.configure(inspect: inspectHotKey, pin: nil)
             hotKeyError = ["Inspect and Pin must use different shortcuts.", hotKeyMonitor.errors[.inspect]]
@@ -275,6 +280,22 @@ import SwiftUI
         }
         hotKeyMonitor.configure(inspect: inspectHotKey, pin: pinHotKey)
         hotKeyError = hotKeyMonitor.errors.values.first
+    }
+}
+
+@MainActor enum NuncidWindowPlacement {
+    static var probeScreen: NSScreen? {
+#if DEBUG
+        if let raw = ProcessInfo.processInfo.environment["NUNCID_PROBE_DISPLAY_ID"], let id = UInt32(raw) {
+            return NSScreen.screens.first { ($0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value == id }
+        }
+#endif
+        return nil
+    }
+
+    static func center(_ window: NSWindow) {
+        guard let screen = probeScreen else { window.center(); return }
+        window.setFrameOrigin(CGPoint(x: screen.visibleFrame.midX - window.frame.width / 2, y: screen.visibleFrame.midY - window.frame.height / 2))
     }
 }
 
@@ -293,7 +314,7 @@ import SwiftUI
         let hostingView = NSHostingView(rootView: SettingsView(state: state))
         hostingView.sizingOptions = []
         window.contentView = hostingView
-        window.center()
+        NuncidWindowPlacement.center(window)
         super.init(window: window)
     }
 #if DEBUG
@@ -317,7 +338,7 @@ import SwiftUI
         let hostingView = NSHostingView(rootView: AboutView(onVersionHistory: onVersionHistory))
         hostingView.sizingOptions = []
         window.contentView = hostingView
-        window.center()
+        NuncidWindowPlacement.center(window)
         super.init(window: window)
     }
 #if DEBUG
@@ -342,16 +363,18 @@ import SwiftUI
         window.isReleasedWhenClosed = false
         let view = VersionHistoryView(currentVersion: NuncidBrand.version)
 #if DEBUG
-        let rootView = CommandLine.arguments.contains("--version-history-dark-probe")
-            ? AnyView(view.preferredColorScheme(.dark))
-            : AnyView(view)
+        let darkProbe = CommandLine.arguments.contains("--version-history-dark-probe")
+        let captureProbe = CommandLine.arguments.contains("--version-history-capture-probe")
+        let rootView = darkProbe ? AnyView(view.preferredColorScheme(.dark))
+            : (captureProbe ? AnyView(view.preferredColorScheme(.light)) : AnyView(view))
+        if captureProbe { window.appearance = NSAppearance(named: darkProbe ? .darkAqua : .aqua) }
 #else
         let rootView = AnyView(view)
 #endif
         let hostingView = NSHostingView(rootView: rootView)
         hostingView.sizingOptions = []
         window.contentView = hostingView
-        window.center()
+        NuncidWindowPlacement.center(window)
         super.init(window: window)
     }
 #if DEBUG
@@ -405,6 +428,19 @@ import SwiftUI
         let statusItemController = NuncidStatusItemController(state: state)
         self.statusItemController = statusItemController
 #if DEBUG
+        if let index = CommandLine.arguments.firstIndex(of: "--exploration-live-probe"), CommandLine.arguments.indices.contains(index + 1) {
+            let output = URL(fileURLWithPath: CommandLine.arguments[index + 1])
+            if CommandLine.arguments.indices.contains(index + 3),
+               let x = Double(CommandLine.arguments[index + 2]), let y = Double(CommandLine.arguments[index + 3]) {
+                state.performExplorationProbe(at: CGPoint(x: x, y: y))
+            } else { state.performActivationCommand() }
+            _ = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak state] _ in
+                Task { @MainActor in
+                    guard let state, let data = try? JSONSerialization.data(withJSONObject: state.explorationDebugSnapshot(), options: [.sortedKeys]) else { return }
+                    try? data.write(to: output, options: .atomic)
+                }
+            }
+        }
         if let index = CommandLine.arguments.firstIndex(of: "--menu-scan-feedback-capture-probe"),
            CommandLine.arguments.indices.contains(index + 1) {
             statusItemController.captureScanFeedbackProbe(
@@ -448,7 +484,8 @@ import SwiftUI
                 TicketLine(key: "NUNCID-35", state: "done", title: "Open the ticket source directly", source: "ppm", metadata: "ticket · medium priority", detail: "The source label is now a clear, quiet link."),
                 TicketLine(key: "NUNCID-33", state: "done", title: "Pin without racing the popup", source: "ppm", metadata: "ticket · high priority", detail: "Move into the card and pin it directly.")
             ]
-            overlay.show(lines, near: NSEvent.mouseLocation, shortcutLabel: "⌥⇧Space")
+            let point = NuncidWindowPlacement.probeScreen.map { CGPoint(x: $0.visibleFrame.midX, y: $0.visibleFrame.midY) } ?? NSEvent.mouseLocation
+            overlay.show(lines, near: point, shortcutLabel: "⌥⇧Space")
             if !CommandLine.arguments.contains("--overlay-temporary-probe") {
                 overlay.pin(shortcutLabel: "⌥⇧Space")
             }
@@ -489,7 +526,7 @@ import SwiftUI
 #if DEBUG
     @MainActor
     private func captureLookupHighlightProbe(to url: URL) {
-        let size = LookupHighlightReleaseProbe.canvasSize
+        let size = ExplorationReleaseProbe.canvasSize
         let window = NSWindow(
             contentRect: CGRect(origin: .zero, size: size),
             styleMask: [.borderless],
@@ -501,10 +538,10 @@ import SwiftUI
         window.backgroundColor = .clear
         window.hasShadow = false
         window.sharingType = .readOnly
-        let hostingView = NSHostingView(rootView: LookupHighlightReleaseProbe())
+        let hostingView = NSHostingView(rootView: ExplorationReleaseProbe())
         hostingView.frame = CGRect(origin: .zero, size: size)
         window.contentView = hostingView
-        window.center()
+        NuncidWindowPlacement.center(window)
         window.orderFrontRegardless()
         probeLookupWindow = window
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in
@@ -835,54 +872,28 @@ struct SettingsView: View {
     }
 
     private var scanningPage: some View {
-        SettingsPage(title: "How Nuncid Activates", subtitle: "Choose what the activation shortcut does.") {
+        SettingsPage(title: "Explore on Demand", subtitle: "Invoke once. Discover outward from the pointer. Close the card or press Escape to stop.") {
             SettingsCard(padding: 0) {
-                shortcutRow(icon: "cursorarrow.rays", title: "Activation shortcut", subtitle: "Controls the selected behavior below.", hotKey: $state.inspectHotKey, forbidden: state.pinHotKey)
+                shortcutRow(icon: "cursorarrow.rays", title: "Activation shortcut", subtitle: "Start or reprioritize exploration at the pointer.", hotKey: $state.inspectHotKey, forbidden: state.pinHotKey)
             }
 
             SettingsCard {
-                SettingsCardHeader(icon: "cursorarrow.motionlines", title: "Shortcut behavior", subtitle: "Choose one clear action for the activation shortcut.")
-                Picker("Shortcut behavior", selection: $state.activationPreferences.mode) {
-                    ForEach(HoverActivationMode.allCases) { mode in Text(mode.title).tag(mode) }
-                }
-                .pickerStyle(.segmented)
-                .labelsHidden()
-                Text(state.activationPreferences.mode.subtitle)
-                    .font(.callout).foregroundStyle(.secondary)
-
-                if state.activationPreferences.mode == .toggleHover {
-                    Divider()
-                    HStack {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("Hover is \(state.hoverScanningEnabled ? "on" : "off")").fontWeight(.medium)
-                            Text(state.hoverMatchFound ? "The menu bar icon confirms a ticket was found." : "The menu bar icon shows when hover is active.")
-                                .font(.caption).foregroundStyle(.secondary)
-                        }
-                        Spacer()
-                        Button(state.hoverScanningEnabled ? "Turn Off" : "Turn On") { state.performActivationCommand() }
-                    }
-                }
-
+                SettingsCardHeader(icon: "cursorarrow.motionlines", title: "One exploration session", subtitle: "The menu icon waits until you point at content. No scanning runs outside a session.")
+                Stepper("Hover delay: \(state.explorationPreferences.hoverMilliseconds) ms", value: $state.explorationPreferences.hoverMilliseconds, in: 0...500, step: 25)
+                Text("Hovering prioritizes a pending ID and opens its cached card after this short delay.").font(.caption).foregroundStyle(.secondary)
                 Divider()
-                Toggle(isOn: $state.activationPreferences.scanFeedbackEnabled) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Show scan start cue").fontWeight(.medium)
-                        Text("Briefly marks where a scan begins. Lookup markers stay visible with their cards.").font(.caption).foregroundStyle(.secondary)
-                    }
-                }
-                .toggleStyle(.switch)
+                Stepper("Parallel lookups: \(state.explorationPreferences.parallelLookups)", value: $state.explorationPreferences.parallelLookups, in: 1...5)
+                Text("Nearest IDs first. Queued IDs are dotted, checking IDs blue, matches green, and unsuccessful lookups gray.").font(.caption).foregroundStyle(.secondary)
             }
 
             HStack(alignment: .top, spacing: 12) {
                 Image(systemName: "sparkles").foregroundStyle(.tint).font(.title3)
                 VStack(alignment: .leading, spacing: 7) {
                     Text("Your setup").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
-                    setupRow("Behavior", state.activationPreferences.mode.title)
+                    setupRow("Behavior", "On-demand exploration")
                     setupRow("Shortcut", state.inspectHotKey?.label ?? "Not set")
-                    if state.activationPreferences.mode == .toggleHover {
-                        setupRow("Hover", state.hoverScanningEnabled ? (state.hoverMatchFound ? "On · ticket found" : "On") : "Off")
-                    }
-                    setupRow("Scan start cue", state.activationPreferences.scanFeedbackEnabled ? "On" : "Off")
+                    setupRow("Session", state.hoverScanningEnabled ? "Exploring" : "Idle")
+                    setupRow("Navigation", "Scroll matches and pending IDs; ⌥ also retries misses")
                 }
                 Spacer()
             }
@@ -908,7 +919,8 @@ struct SettingsView: View {
             SettingsCard {
                 SettingsCardHeader(icon: "computermouse", title: "Navigate in place", subtitle: "The pinned card stays focused while you browse or jump directly.")
                 LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], alignment: .leading, spacing: 12) {
-                    interactionHint("Scroll", "Browse found tickets")
+                    interactionHint("Scroll", "Browse matches and pending IDs")
+                    interactionHint("⌥ Scroll", "Include misses and retry")
                     interactionHint("⇧ Scroll", "Try another project")
                     interactionHint("0–9", "Enter a ticket number")
                     interactionHint("A–Z", "Fuzzy-match a project")
@@ -924,15 +936,7 @@ struct SettingsView: View {
                     }
                     .labelsHidden().pickerStyle(.menu).frame(width: 150)
                 }
-                Divider()
-                Toggle(isOn: $state.popupInteractionPreferences.showAllDetectedIDsWhenPinned) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Show all detected IDs").fontWeight(.medium)
-                        Text("While pinned, keep every ID from the scan marked on screen. The selected result stands out.")
-                            .font(.caption).foregroundStyle(.secondary)
-                    }
-                }
-                .toggleStyle(.switch)
+                Text("During exploration all visible IDs stay marked, with the selected source emphasized. Source scrolling refreshes their positions without discarding the card.").font(.caption).foregroundStyle(.secondary)
             }
             HStack {
                 Text("Drag or resize from any edge. Nuncid remembers the card’s position, size, and pin state.").font(.caption).foregroundStyle(.secondary)

@@ -15,7 +15,148 @@ private final class SelfTestAsyncResult: @unchecked Sendable {
     }
 }
 
+private actor ResolverConcurrencyProbe {
+    var calls: [String: Int] = [:]
+    var active = 0
+    var peak = 0
+    func lookup(_ spec: CandidateSpec) async -> TicketLine? {
+        calls[spec.cacheKey, default: 0] += 1
+        active += 1; peak = max(peak, active)
+        try? await Task.sleep(nanoseconds: 150_000_000)
+        active -= 1
+        return spec.cacheKey.contains("999999") ? nil : TicketLine(key: spec.cacheKey, state: "open", title: "Test fixture", source: "ppm")
+    }
+}
+
 @MainActor enum SelfTests {
+    private static func verifyResolverConcurrency() {
+        let finished = DispatchSemaphore(value: 0)
+        let result = SelfTestAsyncResult()
+        Task.detached {
+            let probe = ResolverConcurrencyProbe()
+            let resolver = TicketResolver(lookupForTesting: { await probe.lookup($0) })
+            let key = CandidateSpec.issue(tracker: .ppm, key: "NUNCID-63")
+            let owner = Task { await resolver.resolve(key) }
+            while await probe.calls[key.cacheKey] == nil { try? await Task.sleep(nanoseconds: 10_000_000) }
+            let waiter = Task { await resolver.resolve(key) }
+            try? await Task.sleep(nanoseconds: 25_000_000)
+            waiter.cancel()
+            let cancelled = await waiter.value
+            let first = await owner.value
+            await withTaskGroup(of: Void.self) { group in
+                for number in [63, 64, 64, 65, 66, 66] {
+                    group.addTask { _ = await resolver.resolve(.issue(tracker: .ppm, key: "NUNCID-\(number)")) }
+                }
+            }
+            let miss = CandidateSpec.issue(tracker: .ppm, key: "NUNCID-999999")
+            _ = await resolver.resolve(miss)
+            _ = await resolver.resolve(miss)
+            let cachedMissCalls = await probe.calls[miss.cacheKey]
+            await resolver.forgetMisses(for: [miss])
+            _ = await resolver.resolve(miss)
+            let counts = await probe.calls
+            let peak = await probe.peak
+            result.set(cancelled == nil && first != nil && counts[key.cacheKey] == 1
+                && counts["issue:ppm:NUNCID-64"] == 1 && counts["issue:ppm:NUNCID-66"] == 1
+                && cachedMissCalls == 1 && counts[miss.cacheKey] == 2
+                && peak <= ExplorationPreferences.load().parallelLookups)
+            finished.signal()
+        }
+        guard finished.wait(timeout: .now() + 5) == .success, result.get() else {
+            fputs("self-test failed: real resolver dedup, global limit, waiter cancellation and explicit miss retry\n", stderr); exit(1)
+        }
+    }
+
+    private static func verifyExploration() {
+        let states: [ExplorationOutcome] = [.matched, .queued, .resolving, .missed]
+        guard states.filter({ $0.isNavigable(includeMisses: false) }) == [.matched, .queued, .resolving],
+              states.allSatisfy({ $0.isNavigable(includeMisses: true) }),
+              ExplorationOutcome.queued.dash != ExplorationOutcome.missed.dash,
+              states.filter(\.showsCheck) == [.matched], states.filter(\.showsQuestion) == [.missed],
+              PopupScrollPresentationPolicy.opacity(pointerInside: false, recentlyScrolling: true, reduceTransparency: false) == 0.5,
+              PopupScrollPresentationPolicy.opacity(pointerInside: true, recentlyScrolling: true, reduceTransparency: false) == 1,
+              PopupScrollPresentationPolicy.opacity(pointerInside: false, recentlyScrolling: false, reduceTransparency: false) == 1,
+              PopupScrollPresentationPolicy.opacity(pointerInside: false, recentlyScrolling: true, reduceTransparency: true) == 1,
+              ExplorationPolicy.next(in: ["a", "b", "c"], selected: "c", direction: 1) == "a",
+              ExplorationPolicy.next(in: ["a", "b", "c"], selected: "a", direction: -1) == "c",
+              ExplorationPolicy.next(in: [], selected: nil, direction: 1) == nil,
+              ExplorationPolicy.next(in: ["a", "miss", "b"], selected: "miss", direction: 1, eligible: ["a", "b"]) == "b",
+              ExplorationPolicy.next(in: ["a", "miss", "b"], selected: "miss", direction: -1, eligible: ["a", "b"]) == "a",
+              ExplorationPolicy.next(in: ["miss"], selected: "miss", direction: 1, eligible: []) == nil,
+              ExplorationPolicy.sameOccurrence(CGRect(x: 0, y: 0, width: 100, height: 20), CGRect(x: 1, y: 1, width: 99, height: 19)),
+              !ExplorationPolicy.sameOccurrence(CGRect(x: 0, y: 0, width: 100, height: 20), CGRect(x: 120, y: 0, width: 100, height: 20)),
+              ExplorationPolicy.dispatch(pending: ["a", "b", "b", "c", "d"], running: ["a"], promoted: "d", limit: 3) == ["d", "b"],
+              ExplorationPolicy.dispatch(pending: ["b"], running: ["a"], promoted: "b", limit: 1).isEmpty,
+              ExplorationPolicy.dispatch(pending: ["a", "b", "c"], running: ["a", "b"], promoted: "c", limit: 1).isEmpty else {
+            fputs("self-test failed: exploration navigation, dedup and bounded priority dispatch\n", stderr); exit(1)
+        }
+        let frame = CGRect(x: -1600, y: -500, width: 1400, height: 900)
+        let point = CGPoint(x: -800, y: -60)
+        let tiles = ExplorationPolicy.tiles(in: frame, around: point)
+        let content = ExplorationPolicy.contentFrame(screen: frame, visible: frame, menuHeight: 32)
+        guard content.maxY == frame.maxY - 32,
+              !content.contains(CGPoint(x: frame.midX, y: frame.maxY - 10)),
+              tiles.first?.contains(point) == true,
+              tiles.allSatisfy({ frame.contains($0) }),
+              stride(from: frame.minX, to: frame.maxX, by: 30).allSatisfy({ x in
+                  stride(from: frame.minY, to: frame.maxY, by: 30).allSatisfy { y in tiles.contains { $0.contains(CGPoint(x: x, y: y)) } }
+              }),
+              ExplorationPolicy.tiles(in: .zero, around: .zero).isEmpty,
+              ExplorationPolicy.tiles(in: CGRect(x: 0, y: 0, width: 30, height: 30), around: CGPoint(x: 15, y: 15)).count == 1 else {
+            fputs("self-test failed: progressive tile coverage on offset displays\n", stderr); exit(1)
+        }
+        var dwell = ExplorationHover()
+        let now = Date(timeIntervalSince1970: 1_000)
+        guard dwell.update(candidate: "a", now: now, delay: 0.1) == nil,
+              dwell.update(candidate: "a", now: now.addingTimeInterval(0.11), delay: 0.1) == "a",
+              dwell.update(candidate: "a", now: now.addingTimeInterval(1), delay: 0.1) == nil,
+              dwell.update(candidate: "b", now: now.addingTimeInterval(1), delay: 0) == "b",
+              dwell.update(candidate: nil, now: now, delay: 0) == nil else {
+            fputs("self-test failed: configurable once-per-entry hover dwell\n", stderr); exit(1)
+        }
+        let suite = "nuncid-exploration-tests-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        guard ExplorationPreferences.load(defaults: defaults) == ExplorationPreferences() else { exit(1) }
+        ExplorationPreferences(hoverMilliseconds: -1, parallelLookups: 99).persist(defaults: defaults)
+        defaults.set("off", forKey: "activation.mode")
+        ExplorationPreferences.migrateShortcutIfNeeded(defaults: defaults)
+        guard ExplorationPreferences.load(defaults: defaults) == ExplorationPreferences(hoverMilliseconds: 0, parallelLookups: 5),
+              NuncidPreferences.load(defaults: defaults).inspectHotKey == nil,
+              NuncidPreferences.load(defaults: defaults).pinHotKey == .pin else {
+            fputs("self-test failed: exploration preference clamps and disabled shortcut migration\n", stderr); exit(1)
+        }
+        NuncidPreferences.save(.inspect, key: "inspectHotKey", defaults: defaults)
+        ExplorationPreferences.migrateShortcutIfNeeded(defaults: defaults)
+        guard NuncidPreferences.load(defaults: defaults).inspectHotKey == .inspect else { exit(1) }
+        for raw in ["00.01.01", "00.01.01.00.00.00", "24.02.29", "26.09.06.17.00.01", "99.12.31.23.59.59"] {
+            guard let version = CalendarVersion(raw), CalendarVersion.fromMacOSShortVersion(version.macOSShortVersion)?.raw == raw else {
+                fputs("self-test failed: injective macOS calendar mapping\n", stderr); exit(1)
+            }
+        }
+        guard ["2026.229.0", "2026.0906.1", "2026.906.86401", "2100.101.1"].allSatisfy({ CalendarVersion.fromMacOSShortVersion($0) == nil }),
+              CalendarVersion("26.09.06")?.macOSShortVersion != CalendarVersion("26.09.06.00.00.00")?.macOSShortVersion else { exit(1) }
+        let finished = DispatchSemaphore(value: 0)
+        let result = SelfTestAsyncResult()
+        Task.detached {
+            let budget = TrackerReadBudget()
+            await budget.configure(1)
+            let first = await budget.acquire()
+            let waiter = Task { await budget.acquire() }
+            try? await Task.sleep(nanoseconds: 50_000_000)
+            waiter.cancel()
+            let cancelled = await waiter.value
+            await budget.release()
+            let next = await budget.acquire()
+            await budget.release()
+            result.set(first && !cancelled && next)
+            finished.signal()
+        }
+        guard finished.wait(timeout: .now() + 2) == .success, result.get() else {
+            fputs("self-test failed: global tracker budget/cancellation slot ownership\n", stderr); exit(1)
+        }
+    }
+
     private static func verifyMenuBarTargetSelection() {
         let start = Date(timeIntervalSince1970: 1_000)
         let target = CGPoint(x: 400, y: 300)
@@ -99,6 +240,8 @@ private final class SelfTestAsyncResult: @unchecked Sendable {
     static func runAndExit() -> Never {
         verifyMenuBarIconPresentation()
         verifyMenuBarTargetSelection()
+        verifyExploration()
+        verifyResolverConcurrency()
         let tokens = TokenParser.parse([
             "HAUSV-578 PAI-843 START-186 PHAROS-203 JANUS-455",
             "collision #130 bare 130 release 0.99.12",
@@ -412,14 +555,16 @@ private final class SelfTestAsyncResult: @unchecked Sendable {
             fputs("self-test failed: empty version history catalogue\n", stderr)
             exit(1)
         }
-        let packagedVersion = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
-            ?? catalogueVersion
+        let packagedVersion = NuncidBrand.version == "Development" ? catalogueVersion : NuncidBrand.version
         if Bundle.main.bundleIdentifier == "at.markusbarta.glint" {
             guard let rawScheme = Bundle.main.object(forInfoDictionaryKey: "NuncidVersionScheme") as? String,
                   let scheme = VersionScheme.parse(rawScheme),
                   let sequence = Bundle.main.object(forInfoDictionaryKey: "NuncidReleaseSequence") as? Int,
                   Bundle.main.object(forInfoDictionaryKey: "NuncidReleaseChannel") as? String == ReleaseMigration.channel,
-                  ReleaseIdentity(rawVersion: packagedVersion, scheme: scheme, sequence: sequence) != nil else {
+                  let identity = ReleaseIdentity(rawVersion: packagedVersion, scheme: scheme, sequence: sequence),
+                  let external = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String,
+                  external == (identity.calendar?.macOSShortVersion ?? packagedVersion),
+                  identity.calendar == nil || CalendarVersion.fromMacOSShortVersion(external)?.raw == packagedVersion else {
                 fputs("self-test failed: packaged release identity\n", stderr); exit(1)
             }
         }
@@ -962,7 +1107,7 @@ private final class SelfTestAsyncResult: @unchecked Sendable {
             visibleFrame: CGRect(x: 0, y: 0, width: 1_200, height: 800)
         )
         guard naturalSingle.height < OverlaySizePolicy.minimum.height,
-              OverlayMetrics.temporaryBodyHeight(totalHeight: naturalSingle.height) == naturalSingle.height - OverlayMetrics.outerPadding * 2 else {
+              OverlayMetrics.temporaryBodyHeight(totalHeight: naturalSingle.height) == naturalSingle.height - OverlayMetrics.outerPadding * 2 - 28 else {
             fputs("self-test failed: naturally measured popup height and temporary body budget\n", stderr); exit(1)
         }
         guard AppearanceResetPolicy.shouldKeepUndo(previous: presentation, current: .defaults),

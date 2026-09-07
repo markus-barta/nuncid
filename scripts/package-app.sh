@@ -9,10 +9,10 @@ signing_mode=ad-hoc
 if [[ "$signing_identity" != "-" ]]; then
   signing_mode=developer-id
 fi
-if [[ ! "$version" =~ '^[0-9]+\.[0-9]+\.[0-9]+$' ]]; then
-  print -u2 "Invalid semantic version in VERSION: $version"
-  exit 1
-fi
+python3 "$repo_dir/scripts/release-policy.py" validate >/dev/null
+bundle_version=$(python3 "$repo_dir/scripts/release-policy.py" field bundle_short_version)
+version_scheme=$(python3 "$repo_dir/scripts/release-policy.py" field version_scheme)
+release_sequence=$(python3 "$repo_dir/scripts/release-policy.py" field release_sequence)
 build_number=$(git -C "$repo_dir" rev-list --count HEAD)
 swift build -c "$configuration" -Xswiftc -warnings-as-errors
 binary_dir=$(cd "$repo_dir" && swift build -c "$configuration" --show-bin-path)
@@ -22,6 +22,7 @@ cp "$binary_dir/Nuncid" "$app_dir/Contents/MacOS/Nuncid"
 rm -rf "$app_dir/Contents/Resources/Brand"
 cp -R "$repo_dir/Sources/Nuncid/Resources/Brand" "$app_dir/Contents/Resources/Brand"
 cp "$repo_dir/LICENSE" "$app_dir/Contents/Resources/LICENSE"
+cp "$repo_dir/Sources/Nuncid/Resources/Release.json" "$app_dir/Contents/Resources/Release.json"
 chmod +x "$app_dir/Contents/MacOS/Nuncid"
 icon_work=$(mktemp -d)
 trap 'rm -rf "$icon_work"' EXIT
@@ -41,16 +42,16 @@ iconutil -c icns "$iconset" -o "$app_dir/Contents/Resources/Nuncid.icns"
 /usr/libexec/PlistBuddy -c 'Add :CFBundleDisplayName string Nuncid' "$app_dir/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c 'Add :CFBundleIconFile string Nuncid' "$app_dir/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c 'Add :CFBundlePackageType string APPL' "$app_dir/Contents/Info.plist"
-/usr/libexec/PlistBuddy -c "Add :CFBundleShortVersionString string $version" "$app_dir/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c "Add :CFBundleShortVersionString string $bundle_version" "$app_dir/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Add :CFBundleVersion string $build_number" "$app_dir/Contents/Info.plist"
-/usr/libexec/PlistBuddy -c 'Add :NuncidVersionScheme string legacy' "$app_dir/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c "Add :NuncidVersionScheme string $version_scheme" "$app_dir/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c "Add :NuncidCanonicalVersion string $version" "$app_dir/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c 'Add :NuncidReleaseChannel string stable' "$app_dir/Contents/Info.plist"
-release_sequence=$(grep -c '^## \[[0-9]' "$repo_dir/CHANGELOG.md")
 /usr/libexec/PlistBuddy -c "Add :NuncidReleaseSequence integer $release_sequence" "$app_dir/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c 'Add :NSHumanReadableCopyright string Copyright © 2026 Markus Barta. Licensed under GNU AGPL v3.0.' "$app_dir/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c 'Add :LSMinimumSystemVersion string 13.0' "$app_dir/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c 'Add :LSUIElement bool true' "$app_dir/Contents/Info.plist"
-/usr/libexec/PlistBuddy -c 'Add :NSScreenCaptureUsageDescription string Nuncid reads a small cursor-adjacent crop locally to recognize ticket keys.' "$app_dir/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c 'Add :NSScreenCaptureUsageDescription string Nuncid progressively reads local screen regions during an explicitly invoked exploration session to recognize ticket keys.' "$app_dir/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Add :NuncidSigningMode string $signing_mode" "$app_dir/Contents/Info.plist"
 if [[ "$signing_mode" == developer-id ]]; then
   codesign --force --options runtime --timestamp --sign "$signing_identity" "$app_dir"
