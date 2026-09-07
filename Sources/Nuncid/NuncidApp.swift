@@ -144,7 +144,7 @@ import SwiftUI
             switch command {
             case .inspect: self.performActivationCommand()
             case .pin: self.coordinator.performPinCommand()
-            case .cancel: self.coordinator.endExploration()
+            case .cancel: self.coordinator.escapeInspection()
             }
         }
         configureHotKeys()
@@ -247,25 +247,18 @@ import SwiftUI
         coordinator.performInspectCommand()
     }
 
-    /// A status-item click arms one target selection. Shortcuts remain immediate;
-    /// neither path toggles hover or rewrites preferences.
+    /// Persistent toggle; OFF remains available when capture permission is lost.
     @discardableResult
     func performMenuBarScan() -> MenuBarScanOutcome {
-        guard screenRecordingGranted else {
-            activity = "Screen Recording required"
-            requestScreenRecording()
-            return .permissionRequired
-        }
-        return coordinator.toggleMenuTargetSelection() ? .armed : .cancelled
+        let enabled = coordinator.toggleMenuTargetSelection()
+        return enabled ? (screenRecordingGranted ? .armed : .permissionRequired) : .cancelled
     }
-
-    func cancelMenuBarScan() { coordinator.cancelMenuTargetSelection() }
 
     func setExplorationState(active: Bool, found: Bool, activity: String) {
         hotKeyMonitor.configureCancellation(enabled: active)
-        hoverScanningEnabled = active
-        hoverMatchFound = active && found
-        self.activity = activity
+        if hoverScanningEnabled != active { hoverScanningEnabled = active }
+        if hoverMatchFound != (active && found) { hoverMatchFound = active && found }
+        if self.activity != activity { self.activity = activity }
     }
 
     func setHoverMatchFound(_ found: Bool) {
@@ -426,14 +419,26 @@ import SwiftUI
         }
 #endif
         NSApp.setActivationPolicy(.accessory)
+#if DEBUG
+        if CommandLine.arguments.contains("--inspection-state-self-test") {
+            Task { @MainActor in
+                let failures = await ExplorationSession.checkInspectionLifetimes()
+                if failures.isEmpty { print("Nuncid inspection runtime lifetime checks passed") }
+                else { print(failures.joined(separator: "\n")) }
+                Darwin.exit(failures.isEmpty ? 0 : 1)
+            }
+            return
+        }
+#endif
         let state = AppState()
         self.state = state
         let statusItemController = NuncidStatusItemController(state: state)
         self.statusItemController = statusItemController
 #if DEBUG
-        if let index = CommandLine.arguments.firstIndex(of: "--exploration-live-probe"), CommandLine.arguments.indices.contains(index + 1) {
+        if let index = CommandLine.arguments.firstIndex(where: { ["--exploration-live-probe", "--menu-detection-live-probe"].contains($0) }), CommandLine.arguments.indices.contains(index + 1) {
             let output = URL(fileURLWithPath: CommandLine.arguments[index + 1])
-            if CommandLine.arguments.indices.contains(index + 3),
+            if CommandLine.arguments[index] == "--menu-detection-live-probe" { state.performMenuBarScan() }
+            else if CommandLine.arguments.indices.contains(index + 3),
                let x = Double(CommandLine.arguments[index + 2]), let y = Double(CommandLine.arguments[index + 3]) {
                 state.performExplorationProbe(at: CGPoint(x: x, y: y))
             } else { state.performActivationCommand() }
@@ -494,6 +499,7 @@ import SwiftUI
                 TicketLine(key: "NUNCID-33", state: "done", title: "Pin without racing the popup", source: "ppm", metadata: "ticket · high priority", detail: "Move into the card and pin it directly.")
             ]
             let point = NuncidWindowPlacement.probeScreen.map { CGPoint(x: $0.visibleFrame.midX, y: $0.visibleFrame.midY) } ?? NSEvent.mouseLocation
+            overlay.setDetectionEnabled(true)
             overlay.show(lines, near: point, shortcutLabel: "⌥⇧Space")
             if !CommandLine.arguments.contains("--overlay-temporary-probe") {
                 overlay.pin(shortcutLabel: "⌥⇧Space")
@@ -885,13 +891,13 @@ struct SettingsView: View {
     }
 
     private var scanningPage: some View {
-        SettingsPage(title: "Explore on Demand", subtitle: "Invoke once. Discover outward from the pointer. Close the card or press Escape to stop.") {
+        SettingsPage(title: "Detection", subtitle: "Click the menu icon or use the activation shortcut to toggle detection. ON keeps the inspection window visible.") {
             SettingsCard(padding: 0) {
-                shortcutRow(icon: "cursorarrow.rays", title: "Activation shortcut", subtitle: "Start or reprioritize exploration at the pointer.", hotKey: $state.inspectHotKey, forbidden: state.pinHotKey)
+                shortcutRow(icon: "cursorarrow.rays", title: "Activation shortcut", subtitle: "Toggle detection on or off. OFF keeps a pinned window.", hotKey: $state.inspectHotKey, forbidden: state.pinHotKey)
             }
 
             SettingsCard {
-                SettingsCardHeader(icon: "cursorarrow.motionlines", title: "One exploration session", subtitle: "The menu icon waits until you point at content. No scanning runs outside a session.")
+                SettingsCardHeader(icon: "cursorarrow.motionlines", title: "Persistent detection", subtitle: "The menu icon waits for content without a timeout. Sleep or permission loss pauses detection, not your ON intent.")
                 Stepper("Hover delay: \(state.explorationPreferences.hoverMilliseconds) ms", value: $state.explorationPreferences.hoverMilliseconds, in: 0...500, step: 25)
                 Text("Hovering prioritizes a pending ID and opens its cached card after this short delay.").font(.caption).foregroundStyle(.secondary)
                 Divider()
@@ -903,7 +909,7 @@ struct SettingsView: View {
                 Image(systemName: "sparkles").foregroundStyle(.tint).font(.title3)
                 VStack(alignment: .leading, spacing: 7) {
                     Text("Your setup").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
-                    setupRow("Behavior", "On-demand exploration")
+                    setupRow("Behavior", "Persistent ON/OFF toggle")
                     setupRow("Shortcut", state.inspectHotKey?.label ?? "Not set")
                     setupRow("Session", state.hoverScanningEnabled ? "Exploring" : "Idle")
                     setupRow("Navigation", "Scroll matches and pending IDs; ⌥ also retries misses")
@@ -936,7 +942,7 @@ struct SettingsView: View {
     private var pinnedPage: some View {
         SettingsPage(title: "Pinned Card", subtitle: "Keep a result on screen and navigate without leaving your work.") {
             SettingsCard(padding: 0) {
-                shortcutRow(icon: "pin.fill", title: "Open pinned card", subtitle: "Open, focus, or close the pinned ticket card.", hotKey: $state.pinHotKey, forbidden: state.inspectHotKey)
+                shortcutRow(icon: "pin.fill", title: "Pin inspection", subtitle: "Open, focus, or unpin the inspection window.", hotKey: $state.pinHotKey, forbidden: state.inspectHotKey)
             }
             settingsFeedback
             SettingsCard {
@@ -948,10 +954,10 @@ struct SettingsView: View {
                     interactionHint("0–9", "Enter a ticket number")
                     interactionHint("A–Z", "Fuzzy-match a project")
                     interactionHint("Return", "Resolve your entry")
-                    interactionHint("Esc", "Revert or close")
+                    interactionHint("Esc", "Clear input, otherwise detection off")
                 }
                 Divider()
-                appearanceRow("Scroll from anywhere", detail: "Hold this modifier while a Nuncid popup is visible. Inside the popup, scroll normally.") {
+                appearanceRow("Scroll from anywhere", detail: "Hold this modifier to browse results. Magnified overflow scrolls natively; the header and arrow buttons always navigate results.") {
                     Picker("Global scroll modifier", selection: $state.popupInteractionPreferences.scrollModifier) {
                         ForEach(PopupScrollModifier.allCases) { modifier in
                             Text("\(modifier.symbol) \(modifier.title)").tag(modifier)
@@ -970,7 +976,7 @@ struct SettingsView: View {
     }
 
     private var appearancePage: some View {
-        SettingsPage(title: "Card Appearance", subtitle: "Tune the ticket card without changing what Nuncid finds.") {
+        SettingsPage(title: "Card Appearance", subtitle: "These settings define the 100% baseline. The inspection header independently remembers 30–300% zoom.") {
             AppearanceCardPreview(preferences: state.presentationPreferences)
                 .frame(maxWidth: .infinity)
 

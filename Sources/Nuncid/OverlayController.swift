@@ -2,7 +2,7 @@ import AppKit
 import SwiftUI
 
 enum OverlayMetrics {
-    static let pinnedReservedChromeHeight: CGFloat = 76
+    static let pinnedReservedChromeHeight: CGFloat = 104
     static let outerPadding: CGFloat = 10
     static let sectionSpacing: CGFloat = 8
 
@@ -21,7 +21,7 @@ enum OverlayMetrics {
         width: CGFloat? = nil
     ) -> CGFloat {
         let resolvedWidth = max(360, width ?? (preferences.width == .custom ? preferences.customWidth : preferences.width.points))
-        guard !lines.isEmpty else { return sticky ? 236 : 208 }
+        guard !lines.isEmpty else { return sticky ? 264 : 208 }
         let primary = stablePrimaryHeight(lines: lines, preferences: preferences, width: resolvedWidth)
         let alternatives = min(preferences.alternativePreviews, max(0, lines.count - 1))
         let rail = alternativeBlockHeight(count: alternatives, sticky: sticky, preferences: preferences)
@@ -442,11 +442,14 @@ private struct PinToggleButton: View {
 
     var body: some View {
         Button(action: action) {
-            Image(systemName: isPinned ? "pin.slash.fill" : "pin.fill")
+            Image(systemName: "pin.fill")
                 .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(Color.accentColor)
+                .rotationEffect(.degrees(isPinned ? -18 : 0))
+                .offset(y: isPinned ? 1 : 0)
+                .foregroundStyle(isPinned ? Color.accentColor : Color.secondary)
                 .frame(width: 24, height: 24)
-                .background(Color.accentColor.opacity(0.10), in: Circle())
+                .background(Color.primary.opacity(isPinned ? 0.12 : 0.035), in: RoundedRectangle(cornerRadius: 6))
+                .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(Color.primary.opacity(isPinned ? 0.20 : 0.06)))
         }
         .buttonStyle(.plain)
         .help(isPinned ? "Unpin card" : "Pin card")
@@ -496,39 +499,38 @@ struct OverlayContent: View {
     let onTogglePin: () -> Void
     let onCycleResult: (Int) -> Void
     let onCycleProject: (Int) -> Void
+    var zoomPercent: Int = 100
+    var detectionEnabled: Bool = false
+    var baselineSize: CGSize? = nil
+    var onZoom: (Int) -> Void = { _ in }
+    private var contentSize: CGSize { baselineSize ?? constrainedSize }
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Namespace private var ticketKeyNamespace
     @State private var settledTitleGeneration = 0
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            if sticky {
-                pinnedHeader
-                resultBody
-                .frame(
-                    height: OverlayMetrics.pinnedBodyHeight(totalHeight: constrainedSize.height),
-                    alignment: .top
-                )
-                .clipped()
-                pinnedFooter.fixedSize(horizontal: false, vertical: true)
-            } else {
-                HStack {
-                    GhostNavigationButton(systemName: "xmark", label: "End exploration", action: onClose)
-                    Text("Explore · Scroll IDs · ⌥ Scroll includes misses").font(.caption).foregroundStyle(.secondary)
-                    Spacer()
-                }.frame(height: 20)
-                resultBody
-                    .frame(
-                        height: OverlayMetrics.temporaryBodyHeight(totalHeight: constrainedSize.height),
-                        alignment: .top
-                    )
-                    .clipped()
+        VStack(alignment: .leading, spacing: 0) {
+            inspectionHeader
+                .frame(height: InspectionZoom.headerHeight)
+                .padding(.horizontal, 10)
+            ScrollView([.horizontal, .vertical]) {
+                VStack(alignment: .leading, spacing: 8) {
+                    resultBody
+                        .frame(height: OverlayMetrics.pinnedBodyHeight(totalHeight: contentSize.height), alignment: .top)
+                    pinnedFooter.fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(10)
+                .frame(width: contentSize.width, height: max(0, contentSize.height - InspectionZoom.headerHeight), alignment: .top)
+                .scaleEffect(InspectionZoom(zoomPercent).scale, anchor: .topLeading)
+                .frame(width: contentSize.width * InspectionZoom(zoomPercent).scale,
+                       height: max(0, contentSize.height - InspectionZoom.headerHeight) * InspectionZoom(zoomPercent).scale,
+                       alignment: .topLeading)
             }
         }
-        .padding(10)
         .frame(width: constrainedSize.width, height: constrainedSize.height, alignment: .top)
         .background { surface }
+        .clipShape(RoundedRectangle(cornerRadius: 14))
         .overlay(RoundedRectangle(cornerRadius: 14).stroke(.white.opacity(0.18)))
         .onChange(of: navigationGeneration) { generation in
             if reduceMotion {
@@ -559,26 +561,18 @@ struct OverlayContent: View {
 
     private var selectedLine: TicketLine? { lines.indices.contains(selectedIndex) ? lines[selectedIndex] : lines.first }
     private var primarySlotHeight: CGFloat {
-        OverlayMetrics.stablePrimaryHeight(
-            lines: lines,
-            preferences: preferences,
-            width: constrainedSize.width
-        )
+        OverlayMetrics.stablePrimaryHeight(lines: lines, preferences: preferences, width: contentSize.width)
     }
     private var primaryTitleSlotHeight: CGFloat {
-        OverlayMetrics.stablePrimaryTitleHeight(
-            lines: lines,
-            preferences: preferences,
-            width: constrainedSize.width
-        )
+        OverlayMetrics.stablePrimaryTitleHeight(lines: lines, preferences: preferences, width: contentSize.width)
     }
     private var neighborIndices: (previous: [Int], next: [Int]) {
         let visibleCount = OverlayMetrics.visibleAlternativeCount(
             lines: lines,
             preferences: preferences,
-            width: constrainedSize.width,
-            totalHeight: constrainedSize.height,
-            sticky: sticky
+            width: contentSize.width,
+            totalHeight: contentSize.height,
+            sticky: true
         )
         return NeighborRailPolicy.indices(
             count: lines.count,
@@ -602,7 +596,7 @@ struct OverlayContent: View {
                         settledGeneration: settledTitleGeneration,
                         reduceMotion: reduceMotion
                     ),
-                    showsPin: !sticky,
+                    showsPin: false,
                     isPinned: sticky,
                     onTogglePin: onTogglePin
                 )
@@ -614,19 +608,10 @@ struct OverlayContent: View {
                         Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
                     }
                     Text(statusText ?? "Ready for a ticket number").font(.headline)
-                    Text(sticky ? "Type a number, paste a ticket key, or explore another ID." : "Hover another ID, or invoke exploration again at a new location.").font(.callout).foregroundStyle(.secondary)
+                    Text("Type a number, paste a ticket key, or point at another ID.").font(.callout).foregroundStyle(.secondary)
                 }.frame(maxWidth: .infinity, minHeight: 160)
             }
             neighborResults(indices: neighborIndices.next, title: "NEXT")
-            if !sticky, !neighborIndices.previous.isEmpty || !neighborIndices.next.isEmpty {
-                HStack(spacing: 6) {
-                    Image(systemName: "pin")
-                    Text("\(shortcutLabel) opens the navigator")
-                }
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .padding(.horizontal, 8)
-            }
         }
         .animation(
             reduceMotion ? .easeOut(duration: 0.12) : .spring(response: 0.34, dampingFraction: 0.88),
@@ -634,41 +619,33 @@ struct OverlayContent: View {
         )
     }
 
-    private var pinnedHeader: some View {
-        ZStack {
+    private var inspectionHeader: some View {
+        VStack(spacing: 2) {
             HStack(spacing: 6) {
-                GhostNavigationButton(systemName: "xmark", label: "Close pinned card", action: onClose)
+                GhostNavigationButton(systemName: "xmark", label: "Close inspection and stop detection", action: onClose)
+                Text(detectionEnabled ? "Detection on" : "Detection off")
+                    .font(.caption.weight(.medium)).foregroundStyle(.secondary).lineLimit(1)
+                Spacer(minLength: 0)
+                PinnedNavigationButtons(resultNavigationEnabled: true, onCycleResult: onCycleResult, onCycleProject: onCycleProject)
+                PinToggleButton(isPinned: sticky, action: onTogglePin)
+            }.frame(height: 24)
+            HStack(spacing: 6) {
                 pinnedContext
-                Spacer(minLength: 8)
-                PinnedNavigationButtons(
-                    resultNavigationEnabled: lines.count > 1,
-                    onCycleResult: onCycleResult,
-                    onCycleProject: onCycleProject
-                )
-                PinToggleButton(isPinned: true, action: onTogglePin)
-            }
-
-            HStack(spacing: 7) {
-                Image(systemName: "line.3.horizontal")
-                    .foregroundStyle(.tertiary)
-                Text("PINNED")
-                    .font(.caption2.weight(.bold))
-                    .foregroundStyle(.secondary)
-                if !lines.isEmpty {
-                    Text("\(min(selectedIndex + 1, lines.count)) of \(lines.count)")
-                        .font(.caption.monospacedDigit())
-                        .foregroundStyle(.secondary)
-                }
-            }
-            .allowsHitTesting(false)
-        }
-        .contentShape(Rectangle())
-        .padding(.horizontal, 8)
-        .frame(height: 24)
+                Spacer(minLength: 0)
+                Text("Zoom").font(.caption2).foregroundStyle(.secondary)
+                GhostNavigationButton(systemName: "minus", label: "Zoom out", enabled: zoomPercent > 30) { onZoom(-1) }
+                Button("\(zoomPercent)%") { onZoom(0) }
+                    .buttonStyle(.plain).font(.caption.monospacedDigit())
+                    .frame(width: 42, height: 24)
+                    .help("Reset zoom to 100%")
+                    .accessibilityLabel("Zoom \(zoomPercent) percent; reset to 100 percent")
+                GhostNavigationButton(systemName: "plus", label: "Zoom in", enabled: zoomPercent < 300) { onZoom(1) }
+            }.frame(height: 24)
+        }.contentShape(Rectangle())
     }
 
     private var pinnedContextWidth: CGFloat {
-        PinnedHeaderLayoutPolicy.contextWidth(totalWidth: constrainedSize.width)
+        min(PinnedHeaderLayoutPolicy.contextWidth(totalWidth: constrainedSize.width), max(0, constrainedSize.width - 180))
     }
 
     @ViewBuilder private var pinnedContext: some View {
@@ -749,7 +726,7 @@ struct OverlayContent: View {
             Text("·")
             Text("type: ticket/project")
             Spacer()
-            Text("\(shortcutLabel) closes").lineLimit(1)
+            Text("\(shortcutLabel): pin").lineLimit(1)
         }.font(.caption2).foregroundStyle(.secondary).padding(.horizontal, 8)
     }
 }
@@ -856,6 +833,9 @@ struct AppearanceCardPreview: View {
     @Published var projectPreview: String?
     @Published var preferences = PresentationPreferences.load()
     @Published var scrollModifier = PopupInteractionPreferences.load().scrollModifier
+    @Published var zoomPercent = InspectionZoom.load().percent
+    @Published var detectionEnabled = false
+    @Published var baselineSize = CGSize(width: 520, height: 300)
 }
 
 private struct OverlayRootView: View {
@@ -864,6 +844,7 @@ private struct OverlayRootView: View {
     let onTogglePin: () -> Void
     let onCycleResult: (Int) -> Void
     let onCycleProject: (Int) -> Void
+    let onZoom: (Int) -> Void
 
     var body: some View {
         GeometryReader { proxy in
@@ -883,7 +864,11 @@ private struct OverlayRootView: View {
                 onClose: onClose,
                 onTogglePin: onTogglePin,
                 onCycleResult: onCycleResult,
-                onCycleProject: onCycleProject
+                onCycleProject: onCycleProject,
+                zoomPercent: state.zoomPercent,
+                detectionEnabled: state.detectionEnabled,
+                baselineSize: state.baselineSize,
+                onZoom: onZoom
             )
         }
     }
@@ -917,12 +902,14 @@ private struct OverlayRootView: View {
     private var globalScrollMonitor: Any?
     private var preferenceObserver: NSObjectProtocol?
     private var interactionPreferenceObserver: NSObjectProtocol?
+    private var screenParameterObserver: NSObjectProtocol?
     private var lastScrollAt = Date.distantPast
     private var scrollOpacityUntil: Date?
     private var scrollOpacityRestore: DispatchWorkItem?
     private var requestedScrollOpacity: CGFloat = 1
     private var opacityAnimation: Task<Void, Never>?
     private var isPositioningProgrammatically = false
+    private var zoom = InspectionZoom.load()
     private var presentationPreferences = PresentationPreferences.load()
     private var interactionPreferences = PopupInteractionPreferences.load()
     private(set) var isSticky = false
@@ -938,7 +925,8 @@ private struct OverlayRootView: View {
         ["target": requestedScrollOpacity, "pointerInside": containsPointer,
          "until": scrollOpacityUntil?.timeIntervalSince1970 ?? 0,
          "now": Date().timeIntervalSince1970, "frame": NSStringFromRect(panel.frame),
-         "reduceTransparency": NSWorkspace.shared.accessibilityDisplayShouldReduceTransparency]
+         "reduceTransparency": NSWorkspace.shared.accessibilityDisplayShouldReduceTransparency,
+         "zoom": zoom.percent, "baseline": NSStringFromSize(contentBaseline), "overflow": hasOverflow]
     }
 
     func captureProbe(to url: URL) {
@@ -963,6 +951,10 @@ private struct OverlayRootView: View {
         panel = FocusablePanel(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel, .resizable], backing: .buffered, defer: false)
         super.init()
 #if DEBUG
+        if let index = CommandLine.arguments.firstIndex(of: "--overlay-zoom-probe"),
+           CommandLine.arguments.indices.contains(index + 1), let percent = Int(CommandLine.arguments[index + 1]) {
+            zoom = InspectionZoom(percent) // Presentation-only; never persist capture-probe settings.
+        }
         if CommandLine.arguments.contains("--overlay-stress-probe") {
             presentationPreferences.alternativePreviews = 6
         }
@@ -992,7 +984,8 @@ private struct OverlayRootView: View {
             onClose: { [weak self] in self?.onClose?() },
             onTogglePin: { [weak self] in self?.onTogglePin?() },
             onCycleResult: { [weak self] direction in self?.cycleResult(direction) },
-            onCycleProject: { [weak self] direction in self?.cycleProject(direction) }
+            onCycleProject: { [weak self] direction in self?.cycleProject(direction) },
+            onZoom: { [weak self] steps in self?.changeZoom(steps) }
         ))
         eventMonitor = NSEvent.addLocalMonitorForEvents(matching: [.scrollWheel, .keyDown]) { [weak self] event in
             self?.handle(event) ?? event
@@ -1004,15 +997,9 @@ private struct OverlayRootView: View {
             Task { @MainActor in
                 guard let self else { return }
                 let loaded = PresentationPreferences.load()
+                guard loaded != self.presentationPreferences else { return }
                 self.presentationPreferences = loaded
-                guard self.panel.isVisible else { return }
-                if loaded.width == .custom,
-                   abs(self.panel.frame.width - loaded.customWidth) < 1,
-                   abs(self.panel.frame.height - loaded.customHeight) < 1 {
-                    self.syncViewState()
-                    return
-                }
-                if self.isSticky { self.renderPinned(useSavedPosition: false) } else { self.renderTemporary() }
+                if self.panel.isVisible { self.renderInspection() }
             }
         }
         interactionPreferenceObserver = NotificationCenter.default.addObserver(forName: .nuncidPopupInteractionPreferencesDidChange, object: nil, queue: .main) { [weak self] _ in
@@ -1020,6 +1007,12 @@ private struct OverlayRootView: View {
                 guard let self else { return }
                 self.interactionPreferences = PopupInteractionPreferences.load()
                 self.syncViewState()
+            }
+        }
+        screenParameterObserver = NotificationCenter.default.addObserver(forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main) { [weak self] _ in
+            Task { @MainActor in
+                guard let self, self.panel.isVisible else { return }
+                self.renderInspection()
             }
         }
         syncViewState()
@@ -1032,6 +1025,7 @@ private struct OverlayRootView: View {
         if let globalScrollMonitor { NSEvent.removeMonitor(globalScrollMonitor) }
         if let preferenceObserver { NotificationCenter.default.removeObserver(preferenceObserver) }
         if let interactionPreferenceObserver { NotificationCenter.default.removeObserver(interactionPreferenceObserver) }
+        if let screenParameterObserver { NotificationCenter.default.removeObserver(screenParameterObserver) }
     }
 
     func show(_ lines: [TicketLine], near mouse: CGPoint, shortcutLabel: String = "⌥⇧Space") {
@@ -1041,6 +1035,17 @@ private struct OverlayRootView: View {
         displayedLines = Array(lines.prefix(HoverResultPolicy.maximumResults)); selectedIndex = 0
         anchorMouse = mouse; self.shortcutLabel = shortcutLabel; statusText = nil
         renderTemporary(); panel.orderFrontRegardless()
+    }
+
+    func setDetectionEnabled(_ enabled: Bool) {
+        if viewState.detectionEnabled != enabled { viewState.detectionEnabled = enabled }
+    }
+    func setShortcutLabel(_ label: String) { shortcutLabel = label; syncViewState() }
+
+    private func changeZoom(_ steps: Int) {
+        zoom = steps == 0 ? InspectionZoom() : zoom.changed(by: steps)
+        zoom.persist()
+        renderInspection()
     }
 
     func prepareExplorationNavigation(_ direction: Int) {
@@ -1106,7 +1111,7 @@ private struct OverlayRootView: View {
     func focusPinned() { guard isSticky else { return }; panel.makeKeyAndOrderFront(nil) }
 
     func replacePinnedResults(_ lines: [TicketLine], selecting key: String? = nil, status: String? = nil) {
-        guard isSticky else { return }
+        guard isVisible else { return }
         cancelQueuedResultNavigation()
         displayedLines = Array(lines.prefix(HoverResultPolicy.maximumResults))
         if let key, let index = displayedLines.firstIndex(where: { $0.key == key }) { selectedIndex = index }
@@ -1116,16 +1121,11 @@ private struct OverlayRootView: View {
 
     func setInput(_ value: String?, projectPreview: String? = nil) {
         inputText = value; self.projectPreview = projectPreview
-        if isSticky {
-            DispatchQueue.main.async { [weak self] in
-                guard let self, self.isSticky else { return }
-                self.renderPinned(useSavedPosition: false)
-            }
-        }
+        if isVisible { syncViewState() }
     }
 
     func showPinnedStatus(_ status: String) {
-        guard isSticky else { return }
+        guard isVisible else { return }
         cancelQueuedResultNavigation()
         displayedLines = []; selectedIndex = 0; statusText = status; renderPinned(useSavedPosition: false)
     }
@@ -1150,15 +1150,21 @@ private struct OverlayRootView: View {
     }
 
     func windowWillResize(_ sender: NSWindow, to frameSize: NSSize) -> NSSize {
-        OverlaySizePolicy.clamped(frameSize, visibleFrame: sender.screen?.visibleFrame)
+        InspectionZoom.bounded(frameSize, visible: sender.screen?.visibleFrame ?? CGRect(origin: .zero, size: OverlaySizePolicy.fallbackMaximum))
+    }
+
+    func windowDidChangeScreen(_ notification: Notification) {
+        guard !isPositioningProgrammatically, panel.isVisible else { return }
+        renderInspection()
+        onExternalContentMayMove?()
     }
 
     func windowDidEndLiveResize(_ notification: Notification) {
         guard !isPositioningProgrammatically else { return }
-        let clamped = OverlaySizePolicy.clamped(panel.frame.size, visibleFrame: panel.screen?.visibleFrame)
+        let baseline = zoom.baseline(afterResize: panel.frame.size)
         presentationPreferences.width = .custom
-        presentationPreferences.customWidth = clamped.width
-        presentationPreferences.customHeight = clamped.height
+        presentationPreferences.customWidth = baseline.width
+        presentationPreferences.customHeight = baseline.height
         presentationPreferences.persist()
         onPresentationPreferencesChange?(presentationPreferences)
         if isSticky { savePinnedOrigin() }
@@ -1213,12 +1219,16 @@ private struct OverlayRootView: View {
             if !pointerInside { noteExternalScroll() }
             let globalChord = event.modifierFlags.contains(interactionPreferences.scrollModifier.eventFlag)
             guard pointerInside || globalChord else { return event }
-            let shiftingProject = pointerInside && isSticky && event.modifierFlags.contains(.shift)
+            let shiftingProject = pointerInside && event.modifierFlags.contains(.shift)
+            let bodyContainsPointer = NSEvent.mouseLocation.y < panel.frame.maxY - InspectionZoom.headerHeight
+            if pointerInside, bodyContainsPointer, hasOverflow, !globalChord, !shiftingProject, !event.modifierFlags.contains(.option) {
+                return event // Native scroll view owns magnified overflow, not result cycling.
+            }
             let delta = shiftingProject && abs(event.scrollingDeltaX) > abs(event.scrollingDeltaY) ? event.scrollingDeltaX : event.scrollingDeltaY
             navigateScroll(delta: delta, shiftingProject: shiftingProject, includeMisses: event.modifierFlags.contains(.option))
             return pointerInside ? nil : event
         }
-        guard isSticky, event.window === panel else { return event }
+        guard event.window === panel else { return event }
         guard panel.isKeyWindow else { return event }
         guard event.type == .keyDown else { return event }
         if event.modifierFlags.contains(.command), event.charactersIgnoringModifiers?.lowercased() == "v" {
@@ -1302,30 +1312,47 @@ private struct OverlayRootView: View {
         onCycleProject?(normalizedDirection)
     }
 
-    private func renderTemporary() {
-        guard let targetScreen = screen(containing: anchorMouse) else { hide(); return }
-        let visible = targetScreen.visibleFrame
-        let size = OverlayMetrics.size(lines: displayedLines, sticky: false, preferences: presentationPreferences, visibleFrame: visible)
-        var origin = CGPoint(x: anchorMouse.x + 18, y: anchorMouse.y - size.height - 18)
-        if origin.x + size.width > visible.maxX { origin.x = anchorMouse.x - size.width - 18 }
-        if origin.y < visible.minY { origin.y = anchorMouse.y + 18 }
-        origin = PanelPlacement.clamped(origin: origin, size: size, visibleFrame: visible)
-        updatePanelSizeLimits(for: targetScreen)
-        syncViewState()
-        isPositioningProgrammatically = true; panel.setFrame(CGRect(origin: origin, size: size), display: true); isPositioningProgrammatically = false
+    private var requestedBaseline: CGSize {
+        let savedWidth = presentationPreferences.width == .custom ? presentationPreferences.customWidth : presentationPreferences.width.points
+        let width = savedWidth.isFinite ? min(10_000, max(100, savedWidth)) : CardWidth.standard.points
+        let savedHeight = presentationPreferences.width == .custom ? presentationPreferences.customHeight : OverlayMetrics.preferredHeight(lines: displayedLines, sticky: true, preferences: presentationPreferences, width: width)
+        let height = savedHeight.isFinite ? min(10_000, max(InspectionZoom.headerHeight + 1, savedHeight)) : 440
+        return CGSize(width: width, height: height)
     }
 
-    private func renderPinned(useSavedPosition: Bool) {
+    private var contentBaseline: CGSize {
+        let requested = requestedBaseline
+        let width = max(360, requested.width)
+        return CGSize(width: width, height: max(requested.height,
+            OverlayMetrics.preferredHeight(lines: displayedLines, sticky: true, preferences: presentationPreferences, width: width)))
+    }
+
+    private var hasOverflow: Bool {
+        contentBaseline.width * zoom.scale > panel.frame.width + 1 ||
+            (contentBaseline.height - InspectionZoom.headerHeight) * zoom.scale > panel.frame.height - InspectionZoom.headerHeight + 1
+    }
+
+    private func renderTemporary() { renderInspection() }
+    private func renderPinned(useSavedPosition: Bool) { renderInspection(useSavedPosition: useSavedPosition) }
+
+    private func renderInspection(useSavedPosition: Bool = false) {
         let shouldRemainFocused = panel.isKeyWindow
-        guard let targetScreen = useSavedPosition ? screen(containing: anchorMouse) : (panel.screen ?? screen(containing: NSEvent.mouseLocation)) else {
-            hide(); return
-        }
+        guard let targetScreen = panel.isVisible ? (panel.screen ?? screen(containing: anchorMouse)) : screen(containing: anchorMouse) else { return }
         let visible = targetScreen.visibleFrame
-        let size = OverlayMetrics.size(lines: displayedLines, sticky: true, preferences: presentationPreferences, visibleFrame: visible)
-        let origin = useSavedPosition ? savedOrigin(for: targetScreen, size: size) : PanelPlacement.clamped(origin: panel.frame.origin, size: size, visibleFrame: visible)
+        let size = InspectionZoom.bounded(zoom.requestedSize(baseline: requestedBaseline), visible: visible)
+        var origin = panel.frame.origin
+        if useSavedPosition { origin = savedOrigin(for: targetScreen, size: size) }
+        else if !panel.isVisible {
+            origin = CGPoint(x: anchorMouse.x + 18, y: anchorMouse.y - size.height - 18)
+            if origin.x + size.width > visible.maxX { origin.x = anchorMouse.x - size.width - 18 }
+            if origin.y < visible.minY { origin.y = anchorMouse.y + 18 }
+        }
+        origin = PanelPlacement.clamped(origin: origin, size: size, visibleFrame: visible)
+        isPositioningProgrammatically = true
         updatePanelSizeLimits(for: targetScreen)
         syncViewState()
-        isPositioningProgrammatically = true; panel.setFrame(CGRect(origin: origin, size: size), display: true); isPositioningProgrammatically = false
+        panel.setFrame(CGRect(origin: origin, size: size), display: true)
+        isPositioningProgrammatically = false
         if shouldRemainFocused { panel.makeKey() }
     }
 
@@ -1341,13 +1368,14 @@ private struct OverlayRootView: View {
         viewState.projectPreview = projectPreview
         viewState.preferences = presentationPreferences
         viewState.scrollModifier = interactionPreferences.scrollModifier
+        viewState.zoomPercent = zoom.percent
+        viewState.baselineSize = contentBaseline
     }
 
     private func updatePanelSizeLimits(for screen: NSScreen) {
-        panel.contentMinSize = OverlaySizePolicy.minimum
-        panel.contentMaxSize = OverlaySizePolicy.clamped(
-            CGSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude),
-            visibleFrame: screen.visibleFrame
+        panel.contentMinSize = InspectionZoom.bounded(InspectionZoom.minimumWindow, visible: screen.visibleFrame)
+        panel.contentMaxSize = InspectionZoom.bounded(
+            CGSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude), visible: screen.visibleFrame
         )
     }
 

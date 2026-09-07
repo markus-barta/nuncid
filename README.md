@@ -1,9 +1,9 @@
 <p align="center">
-  <img src="docs/screenshots/hero-26.09.07.13.25.21.png" alt="Nuncid — point at a ticket and know what matters" width="100%">
+  <img src="docs/screenshots/hero-26.09.07.17.32.24.png" alt="Nuncid — point at a ticket and know what matters" width="100%">
 </p>
 
 <p align="center">
-  <a href="https://github.com/markus-barta/nuncid/releases/latest"><img src="https://img.shields.io/badge/release-26.09.07.13.25.21-0A84FF?style=flat-square" alt="Latest release 26.09.07.13.25.21"></a>
+  <a href="https://github.com/markus-barta/nuncid/releases/latest"><img src="https://img.shields.io/badge/release-26.09.07.17.32.24-0A84FF?style=flat-square" alt="Latest release 26.09.07.17.32.24"></a>
   <img src="https://img.shields.io/badge/macOS-13%2B-111827?style=flat-square&logo=apple" alt="macOS 13 or newer">
   <img src="https://img.shields.io/badge/Swift-5.10-F05138?style=flat-square&logo=swift&logoColor=white" alt="Swift 5.10">
   <img src="https://img.shields.io/badge/OCR-local-22C55E?style=flat-square" alt="Local OCR">
@@ -26,15 +26,15 @@
 
 ## Look once. Keep moving.
 
-Invoke Nuncid to start an **on-demand exploration session**. Apple Vision discovers ticket keys and numbers progressively outward from the pointer over the invoked display. Nearby candidates resolve first through your existing Paimos and GitHub sessions; hovering prioritizes a pending ID and opens its cached card. Nothing scans while the session is idle.
+Click Nuncid or use the activation shortcut to toggle **detection ON/OFF**. ON immediately opens an inspection window and keeps it visible. Apple Vision discovers ticket references progressively outward from the pointer over the invoked display. Nearby candidates resolve first through your existing Paimos and GitHub sessions; hovering prioritizes a pending ID and opens its cached card. OFF stops automatic discovery and reads.
 
 <p align="center">
-  <img src="docs/screenshots/workflow-26.09.07.13.25.21.png" alt="Nuncid keeps the current ticket fixed between previous and next results" width="100%">
+  <img src="docs/screenshots/workflow-26.09.07.17.32.24.png" alt="Nuncid keeps the current ticket fixed between previous and next results" width="100%">
 </p>
 
 | Invoke anywhere | Keep context nearby | Navigate without friction |
 | --- | --- | --- |
-| The **activation shortcut** starts exploration at the pointer. Invoking again prioritizes that location; the menu icon waits until you point at content. | Cards remain open until closed or Escape ends the session. Pin or unpin directly; resize and position the pinned card as before. | Normal scrolling includes matches and not-yet-tried/checking IDs. **Option + scroll** additionally includes unsuccessful IDs and deliberately retries them. |
+| The **activation shortcut** and menu icon toggle detection. A menu invocation waits for content, without a timeout. | ON always keeps the window visible. OFF closes an unpinned window but preserves a pinned one, including cached navigation and manual entry. Unpinning while OFF closes it. | Normal scrolling includes matches and pending IDs. **Option + scroll** includes misses and deliberately retries them. Magnified overflow scrolls natively; use header arrows or the global scroll modifier to browse results. |
 
 All visible candidates use three quiet frame styles—no status badges:
 
@@ -46,28 +46,28 @@ The selected source uses a slightly thicker outline, without changing your confi
 
 When you scroll, every row follows one continuous direction while the ticket key and first title line travel between NEXT, the fixed card, and PREVIOUS. Long titles remain on one line while moving, then reveal their wrapped lines after landing—so the card never jumps.
 
-The pinned header keeps its grab handle, pin state, and result position centered. Close directly at the left, or use the quiet arrow controls at the right to move between projects and results by mouse.
+Pinned and unpinned windows have exactly the same header and controls. Close is at the left; project/result arrows and the permanent pin sit at the right. The unpinned pin is a gray ghost button; the pinned pin is tilted and pressed in. Pinning never rearranges the window.
 
 ## Every card points back to its source
 
 The active source remains emphasized for as long as its card is visible. All candidates are marked during exploration—there is no pinned-only visibility switch. A pending selection shows “Checking…” rather than inventing ticket content.
 
 <p align="center">
-  <img src="docs/screenshots/lookup-highlight-26.09.07.13.25.21.png" alt="Three badge-free detection styles: gray dashes, dark-gray diagonal, and green fill" width="100%">
+  <img src="docs/screenshots/lookup-highlight-26.09.07.17.32.24.png" alt="Three badge-free detection styles: gray dashes, dark-gray diagonal, and green fill" width="100%">
 </p>
 
 Markers ignore mouse input, do not animate, and remain excluded from screen capture. Source scrolling or window/Space changes invalidate stale coordinates immediately. After a short settling delay, Nuncid rediscovers visible IDs and reanchors their markers while keeping the card and cached results. Off-screen IDs lose only their outline.
 
 ## Your shortcuts. Your card.
 
-Left-click the menu icon to **choose where exploration begins**: leave the menu bar, then pause over content for 0.35 seconds or click it. Menu-bar numbers are never the click's target. A second click or right-click menu cancels an armed selection; unused selection expires after 15 seconds. Target clicks pass through, so hover over links you do not want to activate. The shortcut starts immediately at the pointer. During an active session, a new invocation prioritizes its new location.
+Left-click the menu icon to **turn detection ON**: the window appears immediately, then scanning waits until you leave the menu bar and pause over content for 0.35 seconds or click it. Menu-bar numbers never become the target, and the wait does not expire. A second left-click turns detection OFF. Right-click still opens the menu without changing detection. Target clicks pass through, so hover over links you do not want to activate. The shortcut uses the same toggle and starts at the pointer when it is over eligible content.
 
-Scanning settings expose the shortcut, **hover delay (default 100 ms, 0–500 ms)** and **parallel lookups (default 3, 1–5)**. Existing shortcuts and unrelated card preferences survive migration; an old Off mode leaves the shortcut disabled. Closing the card or pressing Escape stops exploration. Settings apply immediately, and appearance previews use only local sample data.
+Detection settings expose the shortcut, **hover delay (default 100 ms, 0–500 ms)** and **parallel lookups (default 3, 1–5)**. Existing shortcuts and unrelated preferences survive migration; an old Off mode leaves the shortcut disabled. Close stops detection and closes even a pinned window. Escape clears active text entry first; otherwise it turns detection OFF while respecting pin. Typing, scrolling, no-match results and completed discovery never disable detection. Sleep or permission loss pauses work; ON intent survives and resumes with fresh geometry. App launch starts OFF. Settings apply immediately, and appearance previews use only local sample data.
 
 **Detection Frames** settings configure each state's outline color/opacity and fill color/opacity. Strike-through is available **only for no-match results**, with its own on/off toggle, color, and opacity. Pending/checking and verified matches never have a diagonal, even if older saved settings enabled one. Changes update visible markers immediately—without OCR or tracker requests. A local preview shows normal/selected frames; reset one state or all marker styles without resetting other preferences.
 
 <p align="center">
-  <img src="docs/screenshots/settings-markers-26.09.07.13.25.21.png" alt="Detection frame colors, opacity, and independent diagonal strike-through settings" width="100%">
+  <img src="docs/screenshots/settings-markers-26.09.07.17.32.24.png" alt="Detection frame colors, opacity, and independent diagonal strike-through settings" width="100%">
 </p>
 
 | Idle | Exploring | Ticket found |
@@ -75,17 +75,22 @@ Scanning settings expose the shortcut, **hover delay (default 100 ms, 0–500 ms
 | <img src="docs/screenshots/menu-hover-off-0.3.2.png" alt="Dimmed Nuncid menu bar icon: hover is off" width="40"> | <img src="docs/screenshots/menu-hover-on-0.3.2.png" alt="Filled viewfinder menu bar icon: hover is on" width="40"> | <img src="docs/screenshots/menu-ticket-found-0.3.2.png" alt="Checkmark menu bar icon: ticket found" width="40"> |
 
 <p align="center">
-  <img src="docs/screenshots/settings-showcase-26.09.07.13.25.21.png" alt="Nuncid activation and spatial card appearance settings" width="100%">
+  <img src="docs/screenshots/settings-showcase-26.09.07.17.32.24.png" alt="Nuncid activation and spatial card appearance settings" width="100%">
 </p>
 
-Nuncid can show zero to six neighboring destinations and offers four text sizes, three presets plus a remembered Custom size, three content densities, and system or solid surfaces. Pinned Card settings retain the global scroll modifier and direct-entry controls. Cards adapt their content to the available space instead of forcing every ticket into the same dimensions.
+Nuncid can show zero to six neighboring destinations and offers four text sizes, three presets plus a remembered Custom size, three content densities, and system or solid surfaces. These appearance settings define the **100% baseline**. The header’s **− / percentage / +** controls independently remember **30–300% zoom**, in 10-percentage-point steps; click the percentage to reset to 100%. Content, icons and spacing magnify together. The header stays at native size so controls remain usable at 30%. The window cannot exceed its current display’s usable area; oversized content scrolls horizontally and vertically using native macOS behavior. Dragging/resizing and changing displays do not bake zoom into the saved baseline.
+
+<p align="center">
+  <img src="docs/screenshots/inspection-zoom30-26.09.07.17.32.24.png" alt="30% magnified content with a comfortably usable native-size header" width="28%">
+  <img src="docs/screenshots/inspection-zoom300-26.09.07.17.32.24.png" alt="300% content magnification constrained to the screen, with native scrolling" width="68%">
+</p>
 
 ## What changed—and why it feels better
 
 The app’s **Version History** explains each release in concise, positive human language. Open it from the menu, About window, or by clicking the version in Settings; your running version is always highlighted.
 
 <p align="center">
-  <img src="docs/screenshots/version-history-26.09.07.13.25.21.png" alt="Nuncid Version History with the current release highlighted and benefit-led notes" width="100%">
+  <img src="docs/screenshots/version-history-26.09.07.17.32.24.png" alt="Nuncid Version History with the current release highlighted and benefit-led notes" width="100%">
 </p>
 
 ## Smarter resolution, fewer wrong guesses
@@ -113,7 +118,7 @@ revisits may refresh them, without background polling. Run/PR/repository cache
 identities are distinct. Pasted scoped PR/run commands and URLs use the same classification rules; pictured commands are never executed.
 
 <p align="center">
-  <img src="docs/screenshots/workflow-run-26.09.07.13.25.21.png" alt="GitHub workflow run summary with status, branch, commit, duration and link" width="70%">
+  <img src="docs/screenshots/workflow-run-26.09.07.17.32.24.png" alt="GitHub workflow run summary with status, branch, commit, duration and link" width="70%">
 </p>
 
 Automatic discovery no longer uses global project history to turn unrelated numbers into tickets. Intentional pinned number/project entry remains available separately, and Nuncid never fabricates a “maybe” result.
@@ -151,12 +156,12 @@ Default commands:
 
 | Command | Shortcut | Behavior |
 | --- | --- | --- |
-| Explore | `⌥Space` | Start or reprioritize exploration at the pointer. |
-| Pin / direct open | `⇧⌥Space` | Open pinned, pin the temporary card, focus it, or close it. |
+| Detection | `⌥Space` | Toggle detection ON/OFF; OFF preserves a pinned window. |
+| Pin / direct open | `⇧⌥Space` | Open pinned, pin the inspection window, focus it, or unpin it. |
 
 Both shortcuts are fully configurable. F1 through F20 work without modifiers; regular keys require a safe global modifier. The native recorder reports unsafe choices and conflicts directly in Settings.
 
-## Pinned navigation
+## Inspection navigation
 
 | Input | Result |
 | --- | --- |
@@ -168,9 +173,9 @@ Both shortcuts are fully configurable. F1 through F20 work without modifiers; re
 | Type letters | Fuzzy-match a project; the best guess previews immediately. |
 | Paste `PHAROS-203`, `#203`, or `203` | Resolve a full key, pull request, or number directly. |
 | Return | Apply the previewed input. |
-| Escape | End exploration. Outside exploration, clear direct-entry input, then close. |
+| Escape | Clear active input first; otherwise turn detection OFF, preserving a pinned window. |
 
-Typing is captured only while the pinned card is focused. Global wheel navigation is passive: Nuncid responds to the configured modifier without consuming the active app’s scroll event. While you scroll outside the card, it fades to 50% opacity; it returns when scrolling settles or the pointer re-enters. Reduce Transparency keeps it opaque.
+Typing is captured only while the inspection window is focused. Global wheel navigation is passive: Nuncid responds to the configured modifier without consuming the active app’s scroll event. While you scroll outside the card, it fades to 50% opacity; it returns when scrolling settles or the pointer re-enters. Reduce Transparency keeps it opaque.
 
 ## Build from source
 

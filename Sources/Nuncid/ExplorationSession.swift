@@ -46,8 +46,13 @@ private final class ExplorationMarkerView: NSView {
     private let planner: TicketEvidencePlanner
     private let overlay: OverlayController
     var onStateChange: ((Bool, Bool, String) -> Void)?
-    var onCloseRequested: (() -> Void)?
+    var onPauseRequested: (() -> Void)?
+    var onSelectionClaimed: (() -> Void)?
     private(set) var isActive = false
+    private(set) var automaticEnabled = false
+    private var presentationHeld = false
+    private var presentationGeneration = 0
+    private var manualRequests = Set<String>()
     private var sessionGeneration = 0
     private var geometryGeneration = 0
     private var jobs: [String: ExplorationJob] = [:]
@@ -66,7 +71,6 @@ private final class ExplorationMarkerView: NSView {
     private var promoted: String?
     private var hover = ExplorationHover()
     private var monitor: Any?
-    private var localMonitor: Any?
     private var workspaceObservers: [NSObjectProtocol] = []
     private var screenObserver: NSObjectProtocol?
     private var markerAppearanceObserver: NSObjectProtocol?
@@ -91,7 +95,7 @@ private final class ExplorationMarkerView: NSView {
         guard CGPreflightScreenCaptureAccess(), let screen = NSScreen.screens.first(where: { $0.frame.contains(point) }),
               Self.displayIsAwake(screen) else { return }
         focus = point
-        if isActive, screen.frame == screenFrame, refreshAfter == nil {
+        if isActive, automaticEnabled, screen.frame == screenFrame, refreshAfter == nil {
             tiles.sort { ExplorationPolicy.distance($0, to: point) < ExplorationPolicy.distance($1, to: point) }
             promoted = occurrence(at: point)?.jobID
             if let promoted { select(promoted, retry: false, near: point) }
@@ -103,13 +107,36 @@ private final class ExplorationMarkerView: NSView {
             isActive = true
             installObservers()
         }
+        automaticEnabled = true
         screenFrame = screen.frame
         refresh()
     }
 
+    /// Cancel automatic reads, retaining cached/manual navigation. Generation
+    /// gates reject late completions; interrupted jobs can be queued again.
+    func suspend(clearAnchors: Bool = false) {
+        automaticEnabled = false
+        sessionGeneration += 1; geometryGeneration += 1
+        discovery?.cancel(); discovery = nil; tiles.removeAll(); refreshAfter = nil
+        workers.values.forEach { $0.cancel() }; workers.removeAll(); manualRequests.removeAll()
+        for id in jobs.keys where jobs[id]?.outcome == .resolving { jobs[id]?.outcome = .queued }
+        hover = ExplorationHover()
+        if clearAnchors { invalidateGeometry() }
+        renderMarkers()
+    }
+
+    /// Direct entry owns presentation until an explicit source selection.
+    func holdPresentation() {
+        presentationGeneration += 1
+        presentationHeld = true; selected = nil; promoted = nil
+        renderMarkers()
+    }
+
     func end() {
-        guard isActive else { return }
-        isActive = false; sessionGeneration += 1; geometryGeneration += 1
+        guard isActive || presentationHeld else { return }
+        isActive = false; automaticEnabled = false; presentationHeld = false
+        manualRequests.removeAll()
+        sessionGeneration += 1; geometryGeneration += 1
         discovery?.cancel(); discovery = nil
         workers.values.forEach { $0.cancel() }; workers.removeAll()
         jobs.removeAll(); occurrences.removeAll(); previousNavigationIDs.removeAll(); tiles.removeAll()
@@ -117,8 +144,7 @@ private final class ExplorationMarkerView: NSView {
         hover = ExplorationHover()
         markerPanel.orderOut(nil)
         if let monitor { NSEvent.removeMonitor(monitor) }
-        if let localMonitor { NSEvent.removeMonitor(localMonitor) }
-        monitor = nil; localMonitor = nil
+        monitor = nil
         for observer in workspaceObservers { NSWorkspace.shared.notificationCenter.removeObserver(observer) }
         workspaceObservers.removeAll()
         if let screenObserver { NotificationCenter.default.removeObserver(screenObserver) }
@@ -139,14 +165,17 @@ private final class ExplorationMarkerView: NSView {
         if !occurrences.isEmpty { previousNavigationIDs = visibleJobIDs() }
         occurrences.removeAll(); tiles.removeAll(); hover = ExplorationHover()
         markerPanel.orderOut(nil)
-        refreshAfter = Date().addingTimeInterval(ExplorationPolicy.settleDuration)
+        refreshAfter = automaticEnabled ? Date().addingTimeInterval(ExplorationPolicy.settleDuration) : nil
     }
 
     func tick() {
         guard isActive else { return }
         guard CGPreflightScreenCaptureAccess(),
               let screen = NSScreen.screens.first(where: { $0.frame == screenFrame }),
-              Self.displayIsAwake(screen) else { end(); overlay.hide(); return }
+              Self.displayIsAwake(screen) else {
+            if automaticEnabled || !occurrences.isEmpty { suspend(clearAnchors: true); onPauseRequested?() }
+            return
+        }
         let now = Date()
         if now.timeIntervalSince(lastValidation) >= LookupSourceLifecyclePolicy.validationInterval {
             lastValidation = now
@@ -160,6 +189,7 @@ private final class ExplorationMarkerView: NSView {
                 invalidateGeometry()
             }
         }
+        guard automaticEnabled else { renderMarkers(); return }
         if let deadline = refreshAfter {
             if now >= deadline { refresh() }
             return
@@ -187,10 +217,11 @@ private final class ExplorationMarkerView: NSView {
         let eligible = Set(ids.filter { jobs[$0]?.outcome.isNavigable(includeMisses: includeMisses) == true })
         guard let next = ExplorationPolicy.next(in: ids, selected: selected, direction: direction, eligible: eligible) else { return true }
         let generation = sessionGeneration
+        let presentation = presentationGeneration
         let previous = selected
         overlay.prepareExplorationNavigation(direction)
         DispatchQueue.main.asyncAfter(deadline: .now() + SpatialRailTransitionPolicy.directionLeadTime) { [weak self] in
-            guard let self, isActive, generation == sessionGeneration, selected == previous else { return }
+            guard let self, isActive, generation == sessionGeneration, presentation == presentationGeneration, selected == previous else { return }
             selectedBounds = occurrences.first { $0.jobID == next }?.anchor.bounds
             select(next, retry: includeMisses, near: focus)
         }
@@ -199,7 +230,10 @@ private final class ExplorationMarkerView: NSView {
 
     private func select(_ id: String, retry: Bool, near point: CGPoint) {
         guard var job = jobs[id] else { return }
+        onSelectionClaimed?()
+        presentationHeld = false; presentationGeneration += 1
         selected = id; promoted = id
+        if !automaticEnabled { manualRequests.insert(id) }
         if let spec = job.primary.first, case .workflowRun = spec,
            job.outcome == .matched, let resolvedAt = job.resolvedAt,
            Date().timeIntervalSince(resolvedAt) >= GitHubRunPreview.cacheLifetime(for: spec, line: job.lines.first) {
@@ -264,8 +298,9 @@ private final class ExplorationMarkerView: NSView {
     private func pump() {
         guard isActive else { return }
         let limit = ExplorationPreferences.load().parallelLookups
-        var pending = visibleJobIDs().filter { jobs[$0]?.outcome == .queued && jobs[$0]?.primary.isEmpty == false }
-        if let promoted, jobs[promoted]?.outcome == .queued, jobs[promoted]?.primary.isEmpty == false { pending.insert(promoted, at: 0) }
+        let allowed = automaticEnabled ? visibleJobIDs() : manualRequests.sorted()
+        var pending = allowed.filter { jobs[$0]?.outcome == .queued && jobs[$0]?.primary.isEmpty == false }
+        if let promoted, automaticEnabled || manualRequests.contains(promoted), jobs[promoted]?.outcome == .queued, jobs[promoted]?.primary.isEmpty == false { pending.insert(promoted, at: 0) }
         for id in ExplorationPolicy.dispatch(pending: pending, running: Set(workers.keys), promoted: promoted, limit: limit) {
             guard let job = jobs[id] else { continue }
             jobs[id]?.outcome = .resolving
@@ -289,15 +324,18 @@ private final class ExplorationMarkerView: NSView {
                 jobs[id]?.lines = lines
                 jobs[id]?.resolvedAt = Date()
                 jobs[id]?.outcome = lines.isEmpty ? .missed : .matched
-                workers[id] = nil
-                if let selected, let completed = jobs[selected] { present(completed, near: focus) }
+                workers[id] = nil; manualRequests.remove(id)
+                if !presentationHeld, let selected, let completed = jobs[selected] { present(completed, near: focus) }
                 renderMarkers(); pump()
             }
         }
     }
 
     private func refresh() {
-        guard isActive, let screen = NSScreen.screens.first(where: { $0.frame == screenFrame }) else { end(); return }
+        guard isActive, automaticEnabled else { return }
+        guard let screen = NSScreen.screens.first(where: { $0.frame == screenFrame }) else {
+            suspend(clearAnchors: true); onPauseRequested?(); return
+        }
         geometryGeneration += 1
         discovery?.cancel()
         if !occurrences.isEmpty { previousNavigationIDs = visibleJobIDs() }
@@ -374,7 +412,7 @@ private final class ExplorationMarkerView: NSView {
                     } else { occurrences.append(candidate) }
                 }
                 renderMarkers(); pump()
-                if selected == nil, let nearest = occurrence(at: focus) ?? occurrences.min(by: { ExplorationPolicy.distance($0.anchor.bounds, to: self.focus) < ExplorationPolicy.distance($1.anchor.bounds, to: self.focus) }) {
+                if !presentationHeld, selected == nil, let nearest = occurrence(at: focus) ?? occurrences.min(by: { ExplorationPolicy.distance($0.anchor.bounds, to: self.focus) < ExplorationPolicy.distance($1.anchor.bounds, to: self.focus) }) {
                     selectedBounds = nearest.anchor.bounds
                     select(nearest.jobID, retry: false, near: focus)
                 }
@@ -382,10 +420,10 @@ private final class ExplorationMarkerView: NSView {
             }
             discovery = nil
             previousNavigationIDs = visibleJobIDs()
-            if let selected, let current = jobs[selected] { present(current, near: focus) }
+            if !presentationHeld, let selected, let current = jobs[selected] { present(current, near: focus) }
             if occurrences.isEmpty {
-                onStateChange?(true, false, "No visible ticket IDs · Esc to end")
-                if !overlay.isVisible { overlay.showExploration([], status: "No visible ticket IDs · Esc to end", near: focus) }
+                onStateChange?(true, false, "Detection on · No visible ticket IDs")
+                if !presentationHeld, selected == nil { overlay.showExploration([], status: "Detection on · No visible ticket IDs", near: focus) }
             }
         }
     }
@@ -397,7 +435,7 @@ private final class ExplorationMarkerView: NSView {
         }
     }
 
-    private static func displayIsAwake(_ screen: NSScreen) -> Bool {
+    static func displayIsAwake(_ screen: NSScreen) -> Bool {
         guard let number = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber else { return false }
         let id = CGDirectDisplayID(number.uint32Value)
         return CGDisplayIsActive(id) != 0 && CGDisplayIsAsleep(id) == 0
@@ -419,15 +457,64 @@ private final class ExplorationMarkerView: NSView {
             ExplorationPolicy.distance($0.anchor.bounds, to: selectedBounds.map { CGPoint(x: $0.midX, y: $0.midY) } ?? focus) < ExplorationPolicy.distance($1.anchor.bounds, to: selectedBounds.map { CGPoint(x: $0.midX, y: $0.midY) } ?? focus)
         }
         markerView.markers = occurrences.compactMap { occurrence in
-            guard let job = jobs[occurrence.jobID], !overOwnWindow(occurrence.anchor.bounds) else { return nil }
+            guard let job = jobs[occurrence.jobID], !overOwnWindow(occurrence.anchor.bounds),
+                  automaticEnabled || (overlay.isVisible && occurrence.anchor.id == selectedOccurrence?.anchor.id) else { return nil }
             return (occurrence.anchor.bounds.offsetBy(dx: -screenFrame.minX, dy: -screenFrame.minY), job.outcome, occurrence.anchor.id == selectedOccurrence?.anchor.id && overlay.isVisible)
         }
         markerPanel.orderFrontRegardless()
     }
 
 #if DEBUG
+    /// Real queue/lifetime paths with synthetic jobs and an in-process resolver.
+    /// No OCR, subprocess or network work is performed by this probe.
+    static func checkInspectionLifetimes() async -> [String] {
+        var failures: [String] = []
+        let overlay = OverlayController(allowsCapture: true)
+        let resolver = TicketResolver(lookupForTesting: { spec in
+            try? await Task.sleep(nanoseconds: 100_000_000)
+            return TicketLine(key: spec.cacheKey, state: "open", title: "Synthetic lifetime fixture", source: "ppm")
+        })
+        let session = ExplorationSession(ocr: ScreenOCR(), resolver: resolver, planner: TicketEvidencePlanner(), overlay: overlay)
+        session.isActive = true; session.automaticEnabled = true
+        let frame = NuncidWindowPlacement.probeScreen?.frame ?? NSScreen.main?.frame ?? CGRect(x: 0, y: 0, width: 1000, height: 800)
+        session.screenFrame = frame
+        session.focus = CGPoint(x: frame.minX + 100, y: frame.maxY - 200)
+        for index in 1...2 {
+            let id = "fixture-\(index)"
+            session.jobs[id] = ExplorationJob(id: id, literal: id, primary: [.issue(tracker: .ppm, key: "NUNCID-\(index)")], fallback: [], contextReason: "Synthetic fixture")
+            session.occurrences.append(ExplorationOccurrence(jobID: id, anchor: ScanFeedbackAnchor(literal: id, bounds: CGRect(x: session.focus.x, y: session.focus.y + CGFloat(index * 30), width: 80, height: 20)), confidence: 1))
+        }
+        session.selected = "fixture-1"
+        session.pump(); session.holdPresentation()
+        for _ in 0..<100 where !session.workers.isEmpty { try? await Task.sleep(nanoseconds: 20_000_000) }
+        if overlay.isVisible || !session.automaticEnabled || session.jobs.values.contains(where: { $0.outcome != .matched }) {
+            failures.append("editing must retain automatic discovery without late presentation")
+        }
+        await resolver.clearCache()
+        for id in session.jobs.keys { session.jobs[id]?.outcome = .queued }
+        session.pump()
+        try? await Task.sleep(nanoseconds: 20_000_000)
+        session.suspend(clearAnchors: true)
+        try? await Task.sleep(nanoseconds: 200_000_000)
+        if session.automaticEnabled || !session.workers.isEmpty || overlay.isVisible || session.jobs.values.contains(where: { $0.outcome != .queued }) {
+            failures.append("suspension cancels workers and rejects late completions")
+        }
+        session.select("fixture-1", retry: false, near: session.focus)
+        for _ in 0..<100 where !session.workers.isEmpty { try? await Task.sleep(nanoseconds: 20_000_000) }
+        if !overlay.isVisible || session.automaticEnabled || session.jobs["fixture-1"]?.outcome != .matched || session.jobs["fixture-2"]?.outcome != .queued {
+            failures.append("OFF manual selection resolves only the explicit job")
+        }
+        _ = session.navigate(1, includeMisses: false)
+        session.holdPresentation()
+        try? await Task.sleep(nanoseconds: 150_000_000)
+        if session.selected != nil || !session.presentationHeld { failures.append("typing invalidates deferred navigation") }
+        session.end(); overlay.hide()
+        if session.isActive || !session.jobs.isEmpty || !session.workers.isEmpty { failures.append("end releases session ownership") }
+        return failures
+    }
+
     func debugSnapshot() -> [String: Any] {
-        ["active": isActive, "geometryGeneration": geometryGeneration,
+        ["active": isActive, "automaticEnabled": automaticEnabled, "presentationHeld": presentationHeld, "geometryGeneration": geometryGeneration,
          "remainingTiles": tiles.count, "workers": workers.count,
          "cardVisible": overlay.isVisible, "opacity": overlay.debugOpacity, "scrollPresentation": overlay.debugScrollPresentation, "selected": selected.flatMap { jobs[$0]?.literal } ?? "",
          "candidates": occurrences.map { occurrence -> [String: Any] in
@@ -455,13 +542,10 @@ private final class ExplorationMarkerView: NSView {
             // The popup's monitor owns navigation-before-invalidation when it
             // is visible. Handling the same scroll twice would erase its queue.
             if event.type == .scrollWheel, overlay.isVisible { return }
-            if event.type == .keyDown, event.keyCode == 53 { onCloseRequested?(); return }
+            // Carbon owns global Escape; the overlay owns local text entry.
+            if event.type == .keyDown, event.keyCode == 53 { return }
             guard screenFrame.contains(NSEvent.mouseLocation) else { return }
             invalidateGeometry()
-        }
-        localMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
-            guard let self, isActive, event.keyCode == 53 else { return event }
-            onCloseRequested?(); return nil
         }
         for name in [NSWorkspace.activeSpaceDidChangeNotification, NSWorkspace.didWakeNotification] {
             workspaceObservers.append(NSWorkspace.shared.notificationCenter.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
@@ -469,10 +553,10 @@ private final class ExplorationMarkerView: NSView {
             })
         }
         workspaceObservers.append(NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.screensDidSleepNotification, object: nil, queue: .main) { [weak self] _ in
-            Task { @MainActor in self?.end(); self?.overlay.hide() }
+            Task { @MainActor in self?.suspend(clearAnchors: true); self?.onPauseRequested?() }
         })
         screenObserver = NotificationCenter.default.addObserver(forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main) { [weak self] _ in
-            Task { @MainActor in self?.end(); self?.overlay.hide() }
+            Task { @MainActor in self?.suspend(clearAnchors: true); self?.onPauseRequested?() }
         }
     }
 }
@@ -507,7 +591,7 @@ struct ExplorationReleaseProbe: View {
             }
             Divider()
             Text("Scroll through matches and pending IDs. Hold Option to include misses.").font(.headline)
-            Text("Source scrolling refreshes marker positions—not your card or resolved cache. Close the card or press Escape to end exploration.").font(.body).foregroundStyle(.secondary)
+            Text("Detection stays ON until you turn it OFF. OFF preserves a pinned window; Close always closes it. Zoom content from 30–300%.").font(.body).foregroundStyle(.secondary)
             Spacer()
             Text("Nuncid \(NuncidBrand.version) · Local OCR · Read-only lookups").font(.caption).foregroundStyle(.secondary)
         }

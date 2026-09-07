@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+## [26.09.07.17.32.24] - 2026-09-07
+
+- NUNCID-72: persistent detection toggle, one pin-aware inspection header, and remembered 30–300% screen-bounded zoom.
+
 ## [26.09.07.13.25.21] - 2026-09-07
 
 - Use local context to distinguish issues, pull requests and workflow runs from numeric clutter; add top-only frame headroom and reserve strike-through for no-match results.

@@ -338,6 +338,10 @@ private actor ResolverConcurrencyProbe {
         verifyExploration()
         verifyMarkerAppearance()
         verifyResolverConcurrency()
+        let inspectionFailures = InspectionChecks.run()
+        guard inspectionFailures.isEmpty else {
+            fputs("self-test failed: inspection: \(inspectionFailures.joined(separator: "; "))\n", stderr); exit(1)
+        }
         let contextFailures = ScreenReferenceChecks.run()
         guard contextFailures.isEmpty else {
             fputs("self-test failed: screen reference context: \(contextFailures.joined(separator: "; "))\n", stderr); exit(1)

@@ -382,16 +382,15 @@ enum CanonicalReleaseChecker {
         let outcome = state.performMenuBarScan()
         switch outcome {
         case .armed:
-            scanFeedback.show(message: "Point at an ID, or click it…", anchoredTo: button)
+            scanFeedback.show(message: "Detection on · Point at an ID", anchoredTo: button)
         case .cancelled:
-            scanFeedback.show(message: "Scan cancelled", anchoredTo: button)
+            scanFeedback.show(message: "Detection off", anchoredTo: button)
         case .permissionRequired:
             scanFeedback.show(message: "Screen Recording required", anchoredTo: button)
         }
     }
 
     private func openMenu(from button: NSStatusBarButton) {
-        state.cancelMenuBarScan()
         if Date().timeIntervalSince(lastUpdateCheckAt) >= 15 * 60 {
             beginUpdateCheck(showCheckingState: false)
         }
@@ -419,7 +418,7 @@ enum CanonicalReleaseChecker {
         menu.addItem(.separator())
 
         addDisabledItem(state.screenRecordingGranted ? state.activity : "Screen Recording required", to: menu)
-        addDisabledItem(state.hoverScanningEnabled ? "Exploration active" : "On-demand · Idle", image: state.hoverScanningEnabled ? "circle.inset.filled" : "circle", to: menu)
+        addDisabledItem(state.hoverScanningEnabled ? "Detection on" : "Detection off", image: state.hoverScanningEnabled ? "circle.inset.filled" : "circle", to: menu)
         if let hotKeyError = state.hotKeyError {
             addDisabledItem(hotKeyError, image: "exclamationmark.triangle.fill", to: menu)
         } else {
