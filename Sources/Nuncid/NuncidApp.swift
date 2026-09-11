@@ -433,6 +433,16 @@ import SwiftUI
             return
         }
 #endif
+        do {
+            try AppIdentity.migratePreferencesIfNeeded()
+        } catch {
+            let alert = NSAlert()
+            alert.messageText = "Nuncid couldn’t migrate your settings"
+            alert.informativeText = "Your previous settings are preserved. Free disk space or check your Library folder permissions, then reopen Nuncid."
+            alert.runModal()
+            NSApp.terminate(nil)
+            return
+        }
         let state = AppState()
         self.state = state
         let statusItemController = NuncidStatusItemController(state: state)

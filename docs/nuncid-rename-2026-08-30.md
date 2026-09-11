@@ -44,7 +44,7 @@ Official follow-up sources:
 
 No material exact conflict was found that stops the approved product rename. The known `nunc id` search noise and potential identity/KYC reading are addressed in product metadata and copy.
 
-## Migration inventory and decisions
+## Original migration inventory and decisions (0.4.0)
 
 | Surface | Migration | Continuity decision |
 | --- | --- | --- |
@@ -59,6 +59,45 @@ No material exact conflict was found that stops the approved product rename. The
 | Installed app | Move prior builds to a rollback directory outside `~/Applications`, install one canonical `Nuncid.app`, then launch and verify. | Rollback remains possible without leaving ambiguous duplicate menu-bar apps. |
 | License/provenance | AGPL-3.0 and copyright unchanged. | No history rewriting or author/provenance change. |
 
-## Rollback
+## Original rollback (before NUNCID-78)
 
 The last Glint build and earlier backups are retained under `~/Library/Application Support/Nuncid/Rollback/`. To roll back, quit Nuncid, move `Nuncid.app` out of `~/Applications`, restore the chosen archived app as `Glint.app`, and launch it. Because the bundle identifier and preferences domain stay stable, configuration remains available to either build.
+
+## Completed internal identity migration — NUNCID-78
+
+Version `260911103102.0.0` supersedes the original bundle-identity decision.
+The packaged app and its stable ad-hoc designated requirement now use
+`at.markusbarta.nuncid`. The executable, resources, current artwork source,
+project picker and preferences domain consistently use Nuncid.
+
+Before constructing app state, the packaged app imports the entire persistent
+`at.markusbarta.glint` domain once. Explicit destination values win, including
+false, zero and empty values. The selected GLINT project becomes NUNCID;
+shortcuts, positions, appearance, zoom, source-refresh preference, learned
+context and cache retain their data. Unknown keys are preserved. Old development
+domains (`Glint` and `Nuncid`) are deliberately not imported into the packaged
+app. The migration marker prevents stale settings returning after a later reset.
+
+A private, local plist backup is written under
+`~/Library/Application Support/Nuncid/IdentityMigration/` before migration.
+A backup or persistence failure stops startup with an explanation, preserving
+the source domain for retry. The app does not remove the source domain itself;
+retire it only after comparing the saved new domain with the backup.
+
+macOS privacy grants are outside UserDefaults. Changing the bundle/signing
+identity can require a new Screen Recording grant through System Settings;
+the app uses its existing permission flow. No TCC database or permission grant
+is copied, reset or modified. Future builds retain the new designated identity.
+There is no app-managed login item or separate legacy cache directory to migrate.
+Updates still use the canonical Nuncid repository and release identity.
+
+GLINT remains only where compatibility or history requires it: the migration
+source identifier, old ticket parsing/routing and regression fixtures, immutable
+release prose and historical screenshots. Typing Glint in project selection
+selects Nuncid rather than exposing a duplicate historical project.
+
+For rollback, quit Nuncid, retain the new domain, restore the exact archived
+pre-migration Nuncid.app, and restore its backed-up plist into
+`at.markusbarta.glint` using `defaults import`. Do not re-sign historical apps or
+rewrite their release files. Changes made after migration stay in the new domain
+and are not automatically backported to old builds.

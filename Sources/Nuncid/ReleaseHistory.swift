@@ -22,6 +22,19 @@ struct ReleaseNote: Identifiable, Equatable {
 enum ReleaseHistory {
     static let notes: [ReleaseNote] = [
         ReleaseNote(
+            version: "260911103102.0.0",
+            isoDate: "2026-09-11",
+            date: "11 September 2026",
+            theme: "Nuncid all the way through",
+            headline: "A new identity. Your familiar setup.",
+            intro: "Nuncid now uses its own macOS app identity and carries your existing settings across automatically.",
+            items: [
+                ReleaseNoteItem(label: "Settings come with you", detail: "Shortcuts, pinned positions, zoom, appearance and detection preferences move together, with a local backup of your previous settings."),
+                ReleaseNoteItem(label: "One project name", detail: "Project selection uses Nuncid. Old Glint ticket references still resolve. macOS may ask you to allow Screen Recording again for the renamed app.")
+            ],
+            versionScheme: .calendarV2
+        ),
+        ReleaseNote(
             version: "260911101807.0.0",
             isoDate: "2026-09-11",
             date: "11 September 2026",

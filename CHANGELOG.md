@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+## [260911103102.0.0] - 2026-09-11
+
+- Complete the Nuncid identity and preserve existing settings (NUNCID-78)
+
 ## [260911101807.0.0] - 2026-09-11
 
 - Calendar v2 versions with consistent weighted system-color display

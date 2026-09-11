@@ -760,7 +760,7 @@ enum LookupHighlightVisibilityPolicy {
         guard let number = currentNumber else {
             overlay.setInput("Type a ticket number first"); return
         }
-        let projects = ProjectDescriptor.known
+        let projects = ProjectDescriptor.selectable
         let currentIndex = projects.firstIndex(where: { $0.key == currentProject }) ?? 0
         let next = projects[(currentIndex + direction + projects.count) % projects.count]
         currentProject = next.key

@@ -298,6 +298,7 @@ struct ProjectDescriptor: Hashable, Identifiable {
 
     static let known: [ProjectDescriptor] = [
         .init(key: "NUNCID", name: "Nuncid", aliases: ["nuncid", "nun sid", "identify now", "ticket lens"], tracker: .ppm),
+        // Retain OCR/history resolution for old ticket keys; hide from selection.
         .init(key: "GLINT", name: "Glint (historical)", aliases: ["glint"], tracker: .ppm),
         .init(key: "HAUSV", name: "Hausverwaltung", aliases: ["hausv", "hausverwaltung"], tracker: .ppm),
         .init(key: "INSPR", name: "Inspr", aliases: ["inspr", "inspire"], tracker: .ppm),
@@ -306,10 +307,15 @@ struct ProjectDescriptor: Hashable, Identifiable {
         .init(key: "PHAROS", name: "Pharos", aliases: ["pharos", "pharos crm"], tracker: .ppm),
         .init(key: "START", name: "Start AGM", aliases: ["start", "start agm"], tracker: .pma),
     ]
+    static let selectable = known.filter { $0.key != "GLINT" }.map { project in
+        project.key == "NUNCID"
+            ? ProjectDescriptor(key: project.key, name: project.name, aliases: project.aliases + ["glint"], tracker: project.tracker)
+            : project
+    }
 }
 
 enum ProjectMatcher {
-    static func bestMatch(for rawQuery: String, projects: [ProjectDescriptor] = ProjectDescriptor.known, current: String? = nil) -> ProjectDescriptor? {
+    static func bestMatch(for rawQuery: String, projects: [ProjectDescriptor] = ProjectDescriptor.selectable, current: String? = nil) -> ProjectDescriptor? {
         let query = normalize(rawQuery)
         guard !query.isEmpty else { return projects.first(where: { $0.key == current }) ?? projects.first }
         return projects.max { lhs, rhs in

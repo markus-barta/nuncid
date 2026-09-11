@@ -160,7 +160,7 @@ private actor ResolverConcurrencyProbe {
         }
         let suite = "nuncid-marker-tests-\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!
-        defer { defaults.removePersistentDomain(forName: suite) }
+        defer { defaults.removePersistentDomain(forName: suite); defaults.synchronize() }
         defaults.set("sentinel", forKey: "inspectHotKey")
         let notified = SelfTestAsyncResult()
         let observer = NotificationCenter.default.addObserver(forName: .nuncidMarkerAppearanceDidChange, object: nil, queue: nil) { _ in notified.set(true) }
@@ -283,7 +283,7 @@ private actor ResolverConcurrencyProbe {
         }
         let suite = "nuncid-exploration-tests-\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!
-        defer { defaults.removePersistentDomain(forName: suite) }
+        defer { defaults.removePersistentDomain(forName: suite); defaults.synchronize() }
         guard ExplorationPreferences.load(defaults: defaults) == ExplorationPreferences() else { exit(1) }
         guard !ExplorationPreferences.load(defaults: defaults).refreshOnSourceWindowChanges else {
             fputs("self-test failed: automatic source refresh defaults off\n", stderr); exit(1)
@@ -423,10 +423,18 @@ private actor ResolverConcurrencyProbe {
     }
 
     static func runAndExit() -> Never {
+        run()
+        exit(0)
+    }
+
+    // Return normally before exit so isolated preference domains are cleaned up.
+    private static func run() {
         verifyMenuBarIconPresentation()
         verifyMenuBarTargetSelection()
         verifyExploration()
         verifyCalendarV2()
+        do { try IdentityMigrationChecks.run() }
+        catch { fputs("self-test failed: identity migration: \(error)\n", stderr); exit(1) }
         verifyMarkerAppearance()
         verifyResolverConcurrency()
         let inspectionFailures = InspectionChecks.run()
@@ -751,8 +759,9 @@ private actor ResolverConcurrencyProbe {
             exit(1)
         }
         let packagedVersion = NuncidBrand.version == "Development" ? catalogueVersion : NuncidBrand.version
-        if Bundle.main.bundleIdentifier == "at.markusbarta.glint" {
-            guard let rawScheme = Bundle.main.object(forInfoDictionaryKey: "NuncidVersionScheme") as? String,
+        if Bundle.main.bundleURL.pathExtension == "app" {
+            guard Bundle.main.bundleIdentifier == AppIdentity.bundleIdentifier,
+                  let rawScheme = Bundle.main.object(forInfoDictionaryKey: "NuncidVersionScheme") as? String,
                   let scheme = VersionScheme.parse(rawScheme),
                   let sequence = Bundle.main.object(forInfoDictionaryKey: "NuncidReleaseSequence") as? Int,
                   Bundle.main.object(forInfoDictionaryKey: "NuncidReleaseChannel") as? String == ReleaseMigration.channel,
@@ -802,7 +811,7 @@ private actor ResolverConcurrencyProbe {
             fputs("self-test failed: isolated preferences\n", stderr)
             exit(1)
         }
-        defer { defaults.removePersistentDomain(forName: suite) }
+        defer { defaults.removePersistentDomain(forName: suite); defaults.synchronize() }
         defaults.set("always", forKey: "triggerMode")
         let customInspect = HotKey(keyCode: 2, modifiers: [.command, .control], keyLabel: "D")
         let f19 = HotKey(keyCode: 80, modifiers: [], keyLabel: "F19")
@@ -931,6 +940,7 @@ private actor ResolverConcurrencyProbe {
                 fputs("self-test failed: legacy activation migration \(legacy)\n", stderr); exit(1)
             }
             migrationDefaults.removePersistentDomain(forName: migrationSuite)
+            migrationDefaults.synchronize()
         }
         let corruptSuite = "NuncidSelfTests.CorruptActivation.\(UUID().uuidString)"
         guard let corruptDefaults = UserDefaults(suiteName: corruptSuite) else { exit(1) }
@@ -939,6 +949,7 @@ private actor ResolverConcurrencyProbe {
             fputs("self-test failed: corrupt activation mode fallback\n", stderr); exit(1)
         }
         corruptDefaults.removePersistentDomain(forName: corruptSuite)
+        corruptDefaults.synchronize()
         guard !HoverInvocationPolicy.shouldTrigger(
             preferences: .init(mode: .off, scanFeedbackEnabled: true),
             hoverEnabled: true, stableDuration: 10, locationAlreadyScanned: false
@@ -1561,6 +1572,5 @@ private actor ResolverConcurrencyProbe {
             fputs("self-test failed: subprocess cancellation propagation\n", stderr); exit(1)
         }
         print("Nuncid self-tests passed")
-        exit(0)
     }
 }

@@ -39,7 +39,7 @@ done
 iconutil -c icns "$iconset" -o "$app_dir/Contents/Resources/Nuncid.icns"
 /usr/libexec/PlistBuddy -c 'Clear dict' "$app_dir/Contents/Info.plist" 2>/dev/null || true
 /usr/libexec/PlistBuddy -c 'Add :CFBundleExecutable string Nuncid' "$app_dir/Contents/Info.plist"
-/usr/libexec/PlistBuddy -c 'Add :CFBundleIdentifier string at.markusbarta.glint' "$app_dir/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c 'Add :CFBundleIdentifier string at.markusbarta.nuncid' "$app_dir/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c 'Add :CFBundleName string Nuncid' "$app_dir/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c 'Add :CFBundleDisplayName string Nuncid' "$app_dir/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c 'Add :CFBundleIconFile string Nuncid' "$app_dir/Contents/Info.plist"
@@ -60,7 +60,7 @@ if [[ "$signing_mode" == developer-id ]]; then
   print -r -- "Signed with Developer ID identity: $signing_identity" >&2
 else
   codesign --force --sign - \
-    --requirements '=designated => identifier "at.markusbarta.glint"' \
+    --requirements '=designated => identifier "at.markusbarta.nuncid"' \
     "$app_dir"
   print -r -- 'Signed locally (ad hoc); this build is not notarized.' >&2
 fi
