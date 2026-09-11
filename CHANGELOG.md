@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+## [26.09.11.10.11.21] - 2026-09-11
+
+- Steady detection in live terminals with optional source-window refresh
+
 ## [26.09.07.17.32.24] - 2026-09-07
 
 - NUNCID-72: persistent detection toggle, one pin-aware inspection header, and remembered 30–300% screen-bounded zoom.

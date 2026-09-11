@@ -213,6 +213,24 @@ private actor ResolverConcurrencyProbe {
         let defaults = UserDefaults(suiteName: suite)!
         defer { defaults.removePersistentDomain(forName: suite) }
         guard ExplorationPreferences.load(defaults: defaults) == ExplorationPreferences() else { exit(1) }
+        guard !ExplorationPreferences.load(defaults: defaults).refreshOnSourceWindowChanges else {
+            fputs("self-test failed: automatic source refresh defaults off\n", stderr); exit(1)
+        }
+        var refreshPreferences = ExplorationPreferences(hoverMilliseconds: 175, parallelLookups: 2)
+        refreshPreferences.refreshOnSourceWindowChanges = true
+        refreshPreferences.persist(defaults: defaults)
+        guard ExplorationPreferences.load(defaults: defaults) == refreshPreferences else {
+            fputs("self-test failed: automatic source refresh opt-in persists\n", stderr); exit(1)
+        }
+        refreshPreferences.refreshOnSourceWindowChanges = false
+        refreshPreferences.persist(defaults: defaults)
+        guard ExplorationPreferences.load(defaults: defaults) == refreshPreferences else {
+            fputs("self-test failed: automatic source refresh opt-out preserves other settings\n", stderr); exit(1)
+        }
+        defaults.removeObject(forKey: "exploration.refreshOnSourceWindowChanges")
+        guard ExplorationPreferences.load(defaults: defaults) == refreshPreferences else {
+            fputs("self-test failed: existing preferences upgrade with automatic source refresh off\n", stderr); exit(1)
+        }
         ExplorationPreferences(hoverMilliseconds: -1, parallelLookups: 99).persist(defaults: defaults)
         defaults.set("off", forKey: "activation.mode")
         ExplorationPreferences.migrateShortcutIfNeeded(defaults: defaults)

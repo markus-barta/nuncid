@@ -21,6 +21,18 @@ struct ReleaseNote: Identifiable, Equatable {
 enum ReleaseHistory {
     static let notes: [ReleaseNote] = [
         ReleaseNote(
+            version: "26.09.11.10.11.21",
+            isoDate: "2026-09-11",
+            date: "11 September 2026",
+            theme: "Steady detection in live terminals",
+            headline: "Keep your matches in view.",
+            intro: "Changing terminal and text-UI window titles no longer repeatedly restart detection. Your detected references stay available while the terminal keeps working.",
+            items: [
+                ReleaseNoteItem(label: "Quiet by default", detail: "Automatic source-window refresh starts off for both new and existing setups, so a changing window title leaves your current scan in place."),
+                ReleaseNoteItem(label: "Refresh on your terms", detail: "Enable Refresh when source window changes in Detection settings when you want automatic rescans. Scrolling still refreshes marker positions; toggle detection off and on for a fresh scan.")
+            ]
+        ),
+        ReleaseNote(
             version: "26.09.07.17.32.24",
             isoDate: "2026-09-07",
             date: "7 September 2026",

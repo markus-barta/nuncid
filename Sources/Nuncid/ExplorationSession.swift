@@ -177,17 +177,11 @@ private final class ExplorationMarkerView: NSView {
             return
         }
         let now = Date()
-        if now.timeIntervalSince(lastValidation) >= LookupSourceLifecyclePolicy.validationInterval {
+        let preferences = ExplorationPreferences.load()
+        if preferences.refreshOnSourceWindowChanges,
+           now.timeIntervalSince(lastValidation) >= LookupSourceLifecyclePolicy.validationInterval {
             lastValidation = now
-            let current = LookupSourceSnapshot.capture()
-            // Focusing our card does not move its source. External activation does.
-            let sameWindow = source?.windowIdentifier != nil && current?.windowIdentifier == source?.windowIdentifier
-            let sourceDisappeared = current?.processIdentifier == source?.processIdentifier && current?.windowIdentifier == nil
-            if current?.processIdentifier != ProcessInfo.processInfo.processIdentifier,
-               sourceIsOnDisplay(current) || sameWindow || sourceDisappeared, current != source {
-                source = current
-                invalidateGeometry()
-            }
+            updateSource(LookupSourceSnapshot.capture(), preferences: preferences)
         }
         guard automaticEnabled else { renderMarkers(); return }
         if let deadline = refreshAfter {
@@ -200,13 +194,26 @@ private final class ExplorationMarkerView: NSView {
             promoted = candidate?.jobID
             pump()
         }
-        let preferences = ExplorationPreferences.load()
         if let id = hover.update(candidate: candidate?.jobID, now: now, delay: Double(preferences.hoverMilliseconds) / 1_000) {
             selectedBounds = candidate?.anchor.bounds
             select(id, retry: false, near: point)
         }
         renderMarkers()
         pump()
+    }
+
+    private func updateSource(_ current: LookupSourceSnapshot?, preferences: ExplorationPreferences) {
+        // Terminal/TUI titles can change on every status update without moving
+        // any IDs. Automatic source polling is therefore explicitly opt-in.
+        guard preferences.refreshOnSourceWindowChanges else { return }
+        // Focusing our card does not move its source. External activation does.
+        let sameWindow = source?.windowIdentifier != nil && current?.windowIdentifier == source?.windowIdentifier
+        let sourceDisappeared = current?.processIdentifier == source?.processIdentifier && current?.windowIdentifier == nil
+        if current?.processIdentifier != ProcessInfo.processInfo.processIdentifier,
+           sourceIsOnDisplay(current) || sameWindow || sourceDisappeared, current != source {
+            source = current
+            invalidateGeometry()
+        }
     }
 
     /// Returns false only outside a session so ordinary pinned navigation can
@@ -510,6 +517,33 @@ private final class ExplorationMarkerView: NSView {
         if session.selected != nil || !session.presentationHeld { failures.append("typing invalidates deferred navigation") }
         session.end(); overlay.hide()
         if session.isActive || !session.jobs.isEmpty || !session.workers.isEmpty { failures.append("end releases session ownership") }
+
+        // Replay a live TUI changing only its title on successive validation
+        // ticks. Exercise the production invalidation path, not just defaults.
+        session.isActive = true; session.automaticEnabled = true
+        let sourceBounds = CGRect(x: 10, y: 20, width: 900, height: 700)
+        let originalSource = LookupSourceSnapshot(processIdentifier: -1, windowIdentifier: 7, windowBounds: sourceBounds, windowTitle: "TUI idle")
+        session.source = originalSource
+        session.jobs["stable"] = ExplorationJob(id: "stable", literal: "NUNCID-77", primary: [], fallback: [], contextReason: "Fixture", outcome: .matched)
+        session.occurrences = [ExplorationOccurrence(jobID: "stable", anchor: ScanFeedbackAnchor(literal: "NUNCID-77", bounds: sourceBounds), confidence: 1)]
+        let geometry = session.geometryGeneration
+        for index in 0..<60 {
+            session.updateSource(LookupSourceSnapshot(processIdentifier: -1, windowIdentifier: 7, windowBounds: sourceBounds, windowTitle: "TUI working \(index)"), preferences: ExplorationPreferences())
+        }
+        if session.geometryGeneration != geometry || session.occurrences.count != 1 || session.refreshAfter != nil || session.jobs["stable"]?.outcome != .matched {
+            failures.append("default OFF retains markers and results through repeated TUI title changes")
+        }
+        let enabled = ExplorationPreferences(refreshOnSourceWindowChanges: true)
+        session.updateSource(originalSource, preferences: enabled)
+        if session.geometryGeneration != geometry { failures.append("unchanged source never triggers a refresh") }
+        let changedSource = LookupSourceSnapshot(processIdentifier: -1, windowIdentifier: 7, windowBounds: sourceBounds, windowTitle: "TUI done")
+        session.updateSource(changedSource, preferences: enabled)
+        if session.geometryGeneration != geometry + 1 || !session.occurrences.isEmpty || session.refreshAfter == nil || session.jobs["stable"]?.outcome != .matched {
+            failures.append("opt-in source refresh invalidates geometry while retaining cached results")
+        }
+        session.updateSource(changedSource, preferences: enabled)
+        if session.geometryGeneration != geometry + 1 { failures.append("a handled source change does not repeat") }
+        session.end()
         return failures
     }
 

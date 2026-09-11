@@ -903,6 +903,9 @@ struct SettingsView: View {
                 Divider()
                 Stepper("Parallel lookups: \(state.explorationPreferences.parallelLookups)", value: $state.explorationPreferences.parallelLookups, in: 1...5)
                 Text("Unchecked and checking IDs share gray dashes; unmatched IDs are dark gray with a diagonal; matches are green. Customize these in Detection Frames.").font(.caption).foregroundStyle(.secondary)
+                Divider()
+                Toggle("Refresh when source window changes", isOn: $state.explorationPreferences.refreshOnSourceWindowChanges)
+                Text("Off by default to keep detection steady in live terminals and text UIs. Turn on to rescan automatically when the source window or its title changes. Scrolling still refreshes markers; toggle detection off and on for a fresh scan.").font(.caption).foregroundStyle(.secondary)
             }
 
             HStack(alignment: .top, spacing: 12) {
