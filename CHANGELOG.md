@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+## [260911121955.0.0] - 2026-09-11
+
+- Publish steady detection, guided permissions and calendar v2 (NUNCID-79)
+
 ## [260911105655.0.0] - 2026-09-11
 
 - Guide Screen Recording setup with app drag-and-drop and restart (NUNCID-83)

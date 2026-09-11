@@ -22,6 +22,19 @@ struct ReleaseNote: Identifiable, Equatable {
 enum ReleaseHistory {
     static let notes: [ReleaseNote] = [
         ReleaseNote(
+            version: "260911121955.0.0",
+            isoDate: "2026-09-11",
+            date: "11 September 2026",
+            theme: "Ready for your next session",
+            headline: "Steady detection. Clear setup.",
+            intro: "This public release brings the new Nuncid identity, guided screen access and consistent calendar versions together.",
+            items: [
+                ReleaseNoteItem(label: "Keep your place", detail: "Live terminal titles no longer restart detection by default. Your existing shortcuts, appearance and window preferences carry across to Nuncid."),
+                ReleaseNoteItem(label: "Get ready in three steps", detail: "Open Screen Recording settings, drag Nuncid into the list and restart from the guide. Read the same weighted calendar version in the menu, Settings, About and Version History.")
+            ],
+            versionScheme: .calendarV2
+        ),
+        ReleaseNote(
             version: "260911105655.0.0",
             isoDate: "2026-09-11",
             date: "11 September 2026",
