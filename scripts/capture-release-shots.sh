@@ -40,7 +40,12 @@ capture_probe settings-appearance --settings-appearance-probe --settings-capture
 capture_probe version-history --version-history-probe --version-history-capture-probe
 capture_probe version-history-dark --version-history-probe --version-history-dark-probe --version-history-capture-probe
 
-for stem in pinned-card inspection-unpinned inspection-zoom30 inspection-zoom300 workflow-run lookup-highlight settings-scanning settings-markers settings-pinned settings-appearance version-history version-history-dark; do
+# Synthetic rendering only: these probes never drag a file, open System Settings,
+# request a privacy grant, or restart the installed app.
+"$binary" --permission-capture-probe "$capture_dir/permission-guide-$version.png" "$capture_dir/Nuncid.app"
+"$binary" --permission-helper-probe --permission-capture-probe "$capture_dir/permission-helper-$version.png" "$capture_dir/Nuncid.app"
+
+for stem in pinned-card inspection-unpinned inspection-zoom30 inspection-zoom300 workflow-run lookup-highlight settings-scanning settings-markers settings-pinned settings-appearance version-history version-history-dark permission-guide permission-helper; do
   mv "$capture_dir/$stem-$version.png" "$screenshots/$stem-$version.png"
 done
 print -r -- "Captured Nuncid $version release visuals"

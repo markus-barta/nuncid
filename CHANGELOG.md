@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+## [260911105655.0.0] - 2026-09-11
+
+- Guide Screen Recording setup with app drag-and-drop and restart (NUNCID-83)
+
 ## [260911103820.0.0] - 2026-09-11
 
 - Open only the populated Nuncid settings window (NUNCID-78)

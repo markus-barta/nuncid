@@ -423,7 +423,7 @@ enum CanonicalReleaseChecker {
         }
         menu.addItem(.separator())
 
-        addDisabledItem(state.screenRecordingGranted ? state.activity : "Screen Recording required", to: menu)
+        addDisabledItem(state.canDetect ? state.activity : (state.screenRecordingGranted ? "Restart to finish setup" : "Screen Recording required"), to: menu)
         addDisabledItem(state.hoverScanningEnabled ? "Detection on" : "Detection off", image: state.hoverScanningEnabled ? "circle.inset.filled" : "circle", to: menu)
         if let hotKeyError = state.hotKeyError {
             addDisabledItem(hotKeyError, image: "exclamationmark.triangle.fill", to: menu)
@@ -433,8 +433,11 @@ enum CanonicalReleaseChecker {
         }
         menu.addItem(.separator())
 
-        if !state.screenRecordingGranted {
+        if !state.canDetect {
             addActionItem("Grant Screen Recording…", to: menu) { [weak state] in state?.requestScreenRecording() }
+            if state.permissionFlow.restartRequired {
+                addActionItem("Restart Nuncid", to: menu) { [weak state] in state?.permissionFlow.restart() }
+            }
         }
         addActionItem("Settings…", keyEquivalent: ",", to: menu) { [weak state] in state?.openSettings() }
         addActionItem("Version History…", to: menu) { [weak state] in state?.openVersionHistory() }

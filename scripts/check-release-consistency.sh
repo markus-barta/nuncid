@@ -58,7 +58,7 @@ for reference in ${(f)download_references}; do
   fi
 done
 
-for stem in hero workflow lookup-highlight settings-showcase version-history; do
+for stem in hero workflow lookup-highlight settings-showcase version-history permission-guide permission-helper; do
   grep -q "docs/screenshots/$stem-$version.png" "$readme" || {
     print -u2 "README does not reference current $stem-$version.png"
     exit 1

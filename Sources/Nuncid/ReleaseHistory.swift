@@ -22,6 +22,19 @@ struct ReleaseNote: Identifiable, Equatable {
 enum ReleaseHistory {
     static let notes: [ReleaseNote] = [
         ReleaseNote(
+            version: "260911105655.0.0",
+            isoDate: "2026-09-11",
+            date: "11 September 2026",
+            theme: "Screen access in three steps",
+            headline: "Drag. Allow. Restart.",
+            intro: "A clear setup guide replaces the detection controls until Screen Recording is ready.",
+            items: [
+                ReleaseNoteItem(label: "No searching for the app", detail: "Open System Settings and drag Nuncid straight from its compact helper into the Screen Recording list. A gentle cue shows the way and respects Reduce Motion."),
+                ReleaseNoteItem(label: "Finish with one restart", detail: "After enabling access, restart the installed app from the guide. Your settings stay in place, and detection remains paused until access is ready.")
+            ],
+            versionScheme: .calendarV2
+        ),
+        ReleaseNote(
             version: "260911103820.0.0",
             isoDate: "2026-09-11",
             date: "11 September 2026",

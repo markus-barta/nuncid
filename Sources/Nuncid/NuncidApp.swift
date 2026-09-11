@@ -100,7 +100,11 @@ import SwiftUI
     @Published var inspectHotKey: HotKey? { didSet { NuncidPreferences.save(inspectHotKey, key: "inspectHotKey"); configureHotKeys() } }
     @Published var pinHotKey: HotKey? { didSet { NuncidPreferences.save(pinHotKey, key: "pinHotKey"); configureHotKeys() } }
     @Published var hotKeyError: String?
-    @Published var screenRecordingGranted: Bool
+    let permissionFlow = ScreenRecordingPermissionFlow()
+    var canDetect: Bool { screenRecordingGranted && !permissionFlow.needsGuidance }
+    @Published var screenRecordingGranted: Bool {
+        didSet { permissionFlow.update(granted: screenRecordingGranted) }
+    }
     @Published var activity = "Ready"
     @Published private(set) var hoverScanningEnabled = false
     @Published private(set) var hoverMatchFound = false
@@ -139,7 +143,7 @@ import SwiftUI
         popupInteractionPreferences = popupInteraction
         inspectHotKey = preferences.inspectHotKey
         pinHotKey = preferences.pinHotKey
-        screenRecordingGranted = CGPreflightScreenCaptureAccess()
+        screenRecordingGranted = permissionFlow.granted
         hotKeyMonitor = GlobalHotKeyMonitor()
         coordinator = HoverCoordinator(appState: self)
         hotKeyMonitor.onCommand = { [weak self] command in
@@ -180,11 +184,7 @@ import SwiftUI
         activity = "Titles and learned context cleared"
     }
     func requestScreenRecording() {
-        screenRecordingGranted = CGRequestScreenCaptureAccess() || CGPreflightScreenCaptureAccess()
-        if !screenRecordingGranted,
-           let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture") {
-            NSWorkspace.shared.open(url)
-        }
+        permissionFlow.openSystemSettings()
     }
     func openSettings() {
         if settingsWindowController == nil { settingsWindowController = SettingsWindowController(state: self) }
@@ -254,7 +254,7 @@ import SwiftUI
     @discardableResult
     func performMenuBarScan() -> MenuBarScanOutcome {
         let enabled = coordinator.toggleMenuTargetSelection()
-        return enabled ? (screenRecordingGranted ? .armed : .permissionRequired) : .cancelled
+        return enabled ? (canDetect ? .armed : .permissionRequired) : .cancelled
     }
 
     func setExplorationState(active: Bool, found: Bool, activity: String) {
@@ -456,6 +456,35 @@ import SwiftUI
 #endif
         NSApp.setActivationPolicy(.accessory)
 #if DEBUG
+        if let index = CommandLine.arguments.firstIndex(of: "--permission-capture-probe"),
+           CommandLine.arguments.indices.contains(index + 2) {
+            let output = URL(fileURLWithPath: CommandLine.arguments[index + 1])
+            let appURL = URL(fileURLWithPath: CommandLine.arguments[index + 2])
+            let flow = ScreenRecordingPermissionFlow(granted: false, appURL: appURL)
+            let helper = CommandLine.arguments.contains("--permission-helper-probe")
+            if !helper {
+                let overlay = OverlayController(allowsCapture: true)
+                overlay.configurePermissionGuide(flow)
+                overlay.showExploration([], status: nil, near: NuncidWindowPlacement.probeScreen?.visibleFrame.origin ?? NSEvent.mouseLocation)
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                    overlay.captureProbe(to: output)
+                    Darwin.exit(FileManager.default.fileExists(atPath: output.path) ? 0 : 1)
+                }
+                return
+            }
+            let window = PermissionHelperController(flow: flow).window!
+            NuncidWindowPlacement.center(window)
+            window.orderFrontRegardless()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                guard let view = window.contentView else { Darwin.exit(1) }
+                view.layoutSubtreeIfNeeded()
+                guard let bitmap = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { Darwin.exit(1) }
+                view.cacheDisplay(in: view.bounds, to: bitmap)
+                guard let data = bitmap.representation(using: .png, properties: [:]) else { Darwin.exit(1) }
+                do { try data.write(to: output); Darwin.exit(0) } catch { Darwin.exit(1) }
+            }
+            return
+        }
         if CommandLine.arguments.contains("--inspection-state-self-test") {
             Task { @MainActor in
                 let failures = await ExplorationSession.checkInspectionLifetimes()
@@ -1112,21 +1141,7 @@ struct SettingsView: View {
     private var privacyPage: some View {
         SettingsPage(title: "Privacy", subtitle: "Screen understanding stays on your Mac.") {
             SettingsCard {
-                HStack(alignment: .top, spacing: 14) {
-                    Image(systemName: state.screenRecordingGranted ? "checkmark.shield.fill" : "exclamationmark.shield.fill")
-                        .font(.system(size: 34))
-                        .symbolRenderingMode(.hierarchical)
-                        .foregroundStyle(state.screenRecordingGranted ? Color.green : Color.orange)
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(state.screenRecordingGranted ? "Screen Recording is allowed" : "Screen Recording permission is required")
-                            .font(.headline)
-                        Text(state.screenRecordingGranted ? "Nuncid is ready to inspect the small region beneath your pointer." : "Allow access so Nuncid can read ticket identifiers from the screen.")
-                            .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-                        if !state.screenRecordingGranted {
-                            Button("Open Privacy Settings…") { state.requestScreenRecording() }.padding(.top, 6)
-                        }
-                    }
-                }
+                PermissionPrivacyStatus(flow: state.permissionFlow)
             }
 
             SettingsCard {
@@ -1358,6 +1373,7 @@ private struct AboutView: View {
 
 @main @MainActor enum NuncidApp {
     static func main() {
+        if AppRelaunch.runHelperIfRequested() { return }
         let application = NSApplication.shared
         let delegate = AppDelegate()
         application.setActivationPolicy(.accessory)

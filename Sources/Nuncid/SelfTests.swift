@@ -433,6 +433,10 @@ private actor ResolverConcurrencyProbe {
         verifyMenuBarTargetSelection()
         verifyExploration()
         verifyCalendarV2()
+        let permissionFailures = PermissionChecks.run()
+        guard permissionFailures.isEmpty else {
+            fputs("self-test failed: permission setup: \(permissionFailures.joined(separator: "; "))\n", stderr); exit(1)
+        }
         do { try IdentityMigrationChecks.run() }
         catch { fputs("self-test failed: identity migration: \(error)\n", stderr); exit(1) }
         verifyMarkerAppearance()
