@@ -14,12 +14,26 @@ struct ReleaseNote: Identifiable, Equatable {
     let headline: String
     let intro: String
     let items: [ReleaseNoteItem]
+    var versionScheme: VersionScheme = .legacy
 
     var id: String { version }
 }
 
 enum ReleaseHistory {
     static let notes: [ReleaseNote] = [
+        ReleaseNote(
+            version: "260911101807.0.0",
+            isoDate: "2026-09-11",
+            date: "11 September 2026",
+            theme: "A clear version everywhere",
+            headline: "See the date. Read the detail.",
+            intro: "New releases use one precise UTC calendar coordinate, with a consistent visual rhythm wherever Nuncid shows its version.",
+            items: [
+                ReleaseNoteItem(label: "Your system colors", detail: "The date follows your macOS accent color. Time and suffix use quieter system text, with the same segment weights in Settings, About, Version History and the menu."),
+                ReleaseNoteItem(label: "One identity, intact", detail: "Calendar v2 keeps the full version unchanged in release files and update checks. Earlier releases keep their original names and formatting.")
+            ],
+            versionScheme: .calendarV2
+        ),
         ReleaseNote(
             version: "26.09.11.10.11.21",
             isoDate: "2026-09-11",
@@ -30,7 +44,8 @@ enum ReleaseHistory {
             items: [
                 ReleaseNoteItem(label: "Quiet by default", detail: "Automatic source-window refresh starts off for both new and existing setups, so a changing window title leaves your current scan in place."),
                 ReleaseNoteItem(label: "Refresh on your terms", detail: "Enable Refresh when source window changes in Detection settings when you want automatic rescans. Scrolling still refreshes marker positions; toggle detection off and on for a fresh scan.")
-            ]
+            ],
+            versionScheme: .calendar
         ),
         ReleaseNote(
             version: "26.09.07.17.32.24",
@@ -43,7 +58,8 @@ enum ReleaseHistory {
                 ReleaseNoteItem(label: "A true toggle", detail: "The menu icon and activation shortcut turn detection on or off. ON keeps the window visible; OFF preserves a pinned window. Escape clears input first, while Close always closes."),
                 ReleaseNoteItem(label: "One familiar header", detail: "Pinning no longer changes the layout. The permanent top-right pin is quiet gray when unpinned and tilted and pressed in when pinned. Typing and browsing do not stop discovery."),
                 ReleaseNoteItem(label: "Your view, at your scale", detail: "Remember 30–300% zoom in 10-point steps, or click the percentage to reset to 100%. Content magnifies together; the header stays usable and oversized content scrolls within the display’s usable area.")
-            ]
+            ],
+            versionScheme: .calendar
         ),
         ReleaseNote(
             version: "26.09.07.13.25.21",
@@ -56,7 +72,8 @@ enum ReleaseHistory {
                 ReleaseNoteItem(label: "Context before lookup", detail: "Explicit keys, PR labels, supported URLs and gh commands determine the reference type. Nearby context stays inside its text block and window; missing scope remains unresolved."),
                 ReleaseNoteItem(label: "Workflow runs, too", detail: "Repository-scoped GitHub Actions runs get their own preview with workflow, status, branch, commit, duration and link. No logs or artifacts are fetched."),
                 ReleaseNoteItem(label: "Room above the text", detail: "Detection frames gain 3 points of top headroom without moving their bottom edge. Only no-match results can use a diagonal; unchecked and verified matches never have a strike-through.")
-            ]
+            ],
+            versionScheme: .calendar
         ),
         ReleaseNote(
             version: "26.09.07.07.09.01",
@@ -69,7 +86,8 @@ enum ReleaseHistory {
                 ReleaseNoteItem(label: "Clear at a glance", detail: "Unchecked and checking IDs share gray dashes at 70% opacity. No-match IDs use a dark-gray frame and a 50% diagonal; verified matches use green with a 10% fill."),
                 ReleaseNoteItem(label: "Your own palette", detail: "Detection Frames settings provide independent outline, fill, and strike-through colors and opacity for all three states. Enable or disable the diagonal separately."),
                 ReleaseNoteItem(label: "Preview without waiting", detail: "See normal and selected frames before your next lookup. Changes apply to visible markers immediately, without rescanning or repeating a tracker request.")
-            ]
+            ],
+            versionScheme: .calendar
         ),
         ReleaseNote(
             version: "26.09.06.19.36.59",
@@ -83,7 +101,8 @@ enum ReleaseHistory {
                 ReleaseNoteItem(label: "Browse, or deliberately retry", detail: "Scroll through matches and pending IDs. Option + scroll also includes unsuccessful IDs for another try. Outside scrolling gently fades the card and refreshes source markers without discarding context."),
                 ReleaseNoteItem(label: "Simpler controls", detail: "One on-demand exploration action replaces the three activation modes. Tune hover delay and parallel lookups; close the card or press Escape to finish."),
                 ReleaseNoteItem(label: "A date you can trust", detail: "Releases now use UTC calendar coordinates with explicit update metadata. Existing releases keep their identities, and macOS receives a lossless compatible bundle version.")
-            ]
+            ],
+            versionScheme: .calendar
         ),
         ReleaseNote(
             version: "26.09.06.17.55.27",
@@ -95,7 +114,8 @@ enum ReleaseHistory {
             items: [
                 ReleaseNoteItem(label: "History stays truthful", detail: "This coordinate remains retired rather than being reused for different bytes."),
                 ReleaseNoteItem(label: "A fresh, verified successor", detail: "The next candidate corrects canonical-version validation while retaining the exploration improvements.")
-            ]
+            ],
+            versionScheme: .calendar
         ),
         ReleaseNote(
             version: "1.2.3",
@@ -411,9 +431,10 @@ struct VersionHistoryView: View {
             Spacer(minLength: 0)
             HStack(spacing: 7) {
                 Circle().fill(Color.green).frame(width: 7, height: 7)
-                Text("Running v\(currentVersion)")
-                    .font(.caption.monospacedDigit())
-                    .foregroundStyle(.secondary)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Running").font(.caption).foregroundStyle(.secondary)
+                    VersionText(version: currentVersion, scheme: NuncidBrand.versionScheme, prefix: "v", size: 11)
+                }
             }
             .padding(18)
         }
@@ -432,20 +453,19 @@ struct VersionHistoryView: View {
                     .fill(current ? Color.accentColor : Color.secondary.opacity(0.35))
                     .frame(width: 7, height: 7)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("v\(note.version)")
-                        .font(.callout.monospacedDigit().weight(.semibold))
-                        .foregroundStyle(selected ? Color.white : Color.primary)
+                    VersionText(version: note.version, scheme: note.versionScheme, prefix: "v", size: 12,
+                                weight: .semibold)
                         .lineLimit(1)
                         .minimumScaleFactor(0.8)
                     HStack(spacing: 6) {
                         Text(note.date)
                             .font(.caption2)
-                            .foregroundStyle(selected ? Color.white.opacity(0.72) : Color.secondary)
+                            .foregroundStyle(Color.secondary)
                         if current {
                             Text("CURRENT")
                                 .font(.system(size: 8, weight: .bold))
                                 .tracking(0.5)
-                                .foregroundStyle(selected ? Color.white.opacity(0.85) : Color.accentColor)
+                                .foregroundStyle(Color.accentColor)
                         }
                     }
                 }
@@ -457,7 +477,8 @@ struct VersionHistoryView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .background(selected ? Color.accentColor : Color.clear, in: RoundedRectangle(cornerRadius: 8))
+        .background(selected ? Color.accentColor.opacity(0.10) : Color.clear, in: RoundedRectangle(cornerRadius: 8))
+        .overlay(RoundedRectangle(cornerRadius: 8).stroke(selected ? Color.accentColor.opacity(0.45) : Color.clear))
         .accessibilityLabel("Version \(note.version)\(current ? ", current" : "")")
         .accessibilityAddTraits(selected ? .isSelected : [])
     }
@@ -474,8 +495,8 @@ struct VersionHistoryView: View {
                             .frame(width: 42, height: 42)
                             .background(Color.accentColor.opacity(0.09), in: RoundedRectangle(cornerRadius: 10))
                         VStack(alignment: .leading, spacing: 4) {
-                            HStack(spacing: 8) {
-                                Text("v\(note.version)").font(.title2.monospacedDigit().weight(.bold))
+                            VStack(alignment: .leading, spacing: 6) {
+                                VersionText(version: note.version, scheme: note.versionScheme, prefix: "v", size: 20, weight: .bold)
                                 Text(note.theme.uppercased())
                                     .font(.caption2.weight(.bold))
                                     .tracking(0.7)

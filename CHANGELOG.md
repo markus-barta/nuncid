@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+## [260911101807.0.0] - 2026-09-11
+
+- Calendar v2 versions with consistent weighted system-color display
+
 ## [26.09.11.10.11.21] - 2026-09-11
 
 - Steady detection in live terminals with optional source-window refresh

@@ -627,7 +627,10 @@ struct ExplorationReleaseProbe: View {
             Text("Scroll through matches and pending IDs. Hold Option to include misses.").font(.headline)
             Text("Detection stays ON until you turn it OFF. OFF preserves a pinned window; Close always closes it. Zoom content from 30–300%.").font(.body).foregroundStyle(.secondary)
             Spacer()
-            Text("Nuncid \(NuncidBrand.version) · Local OCR · Read-only lookups").font(.caption).foregroundStyle(.secondary)
+            HStack(spacing: 4) {
+                VersionText(version: NuncidBrand.version, scheme: NuncidBrand.versionScheme, prefix: "Nuncid ", size: 11)
+                Text("· Local OCR · Read-only lookups").font(.caption).foregroundStyle(.secondary)
+            }
         }
         .padding(44)
         .frame(width: Self.canvasSize.width, height: Self.canvasSize.height)

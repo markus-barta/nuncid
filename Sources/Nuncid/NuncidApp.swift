@@ -19,6 +19,9 @@ import SwiftUI
         }
         return nil
     }
+    static func resourceURL(named name: String, extension ext: String) -> URL? {
+        resourceBundles.lazy.compactMap { $0.url(forResource: name, withExtension: ext) }.first
+    }
     static var appIcon: NSImage {
         image(named: "nuncid-app-icon-1024") ?? NSApp.applicationIconImage
     }
@@ -868,7 +871,12 @@ struct SettingsView: View {
 
             Spacer()
             Button { state.openVersionHistory() } label: {
-                Label("Version \(NuncidBrand.version)", systemImage: "clock.arrow.circlepath")
+                Label {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("Version")
+                        VersionText(version: NuncidBrand.version, scheme: NuncidBrand.versionScheme, size: 12)
+                    }
+                } icon: { Image(systemName: "clock.arrow.circlepath") }
                     .font(.caption.monospacedDigit())
                     .foregroundStyle(.secondary)
             }
@@ -1259,7 +1267,7 @@ private struct AboutView: View {
             Text("Nuncid").font(.largeTitle.weight(.bold))
             Text("Pronounced NUN-sid").font(.caption.weight(.medium)).foregroundStyle(Color.accentColor)
             Text("Ticket context, right where you point.").font(.headline).foregroundStyle(.secondary)
-            Text("Version \(NuncidBrand.version)").font(.callout.monospacedDigit()).foregroundStyle(.secondary)
+            VersionText(version: NuncidBrand.version, scheme: NuncidBrand.versionScheme, prefix: "Version ")
             Button("Version History…", action: onVersionHistory)
             Text("Reads a tiny on-screen region locally and resolves real PPM, PMA, and GitHub records—never invented placeholders.")
                 .font(.callout).foregroundStyle(.secondary).multilineTextAlignment(.center).frame(maxWidth: 330)

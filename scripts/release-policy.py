@@ -14,7 +14,10 @@ import subprocess
 
 ROOT = Path(__file__).resolve().parent.parent
 RECORD = Path("Sources/Nuncid/Resources/Release.json")
-SCHEME = "inspr-calendar-v1"
+SCHEME_V1 = "inspr-calendar-v1"
+SCHEME = "inspr-calendar-v2"
+LAST_V1 = "26.09.11.10.11.21"
+FIRST_V2_SEQUENCE = 26
 
 
 def calendar(value):
@@ -22,6 +25,25 @@ def calendar(value):
         raise ValueError("Noncanonical calendar coordinate")
     fields = list(map(int, value.split(".")))
     return dt.datetime(2000 + fields[0], *fields[1:], tzinfo=dt.timezone.utc)
+
+
+def calendar_v2(value):
+    if not re.fullmatch(r"[1-9][0-9]{11}\.0\.0", value):
+        raise ValueError("Noncanonical calendar v2 coordinate")
+    return calendar(".".join(value[index:index + 2] for index in range(0, 12, 2)))
+
+
+def bundle_version_v2(value):
+    return bundle_version(calendar_v2(value).strftime("%y.%m.%d.%H.%M.%S"))
+
+
+def canonical_version_v2(external):
+    legacy = canonical_version(external)
+    if len(legacy.split(".")) != 6:
+        raise ValueError("Calendar v2 requires second precision")
+    value = legacy.replace(".", "") + ".0.0"
+    calendar_v2(value)
+    return value
 
 
 def bundle_version(value):
@@ -61,6 +83,18 @@ def load(root=ROOT):
     if type(sequence) is not int or sequence < 1:
         raise ValueError("Invalid release sequence")
     if record["version_scheme"] == SCHEME:
+        value = calendar_v2(version)
+        if record["bundle_short_version"] != bundle_version_v2(version):
+            raise ValueError("Invalid macOS v2 mapping")
+        if (record["last_legacy_version"] != LAST_V1
+                or record.get("legacy_version_scheme") != SCHEME_V1
+                or record["first_calendar_sequence"] != FIRST_V2_SEQUENCE):
+            raise ValueError("Unknown v2 migration anchor")
+        first = calendar_v2(record["first_calendar_version"])
+        if (first <= calendar(LAST_V1) or sequence < FIRST_V2_SEQUENCE or value < first
+                or ((sequence == FIRST_V2_SEQUENCE) != (version == record["first_calendar_version"]))):
+            raise ValueError("Calendar v2 coordinate contradicts migration anchor")
+    elif record["version_scheme"] == SCHEME_V1:
         calendar(version)
         if len(version.split(".")) != 6:
             raise ValueError("Nuncid reserves long form for every release")
@@ -71,6 +105,8 @@ def load(root=ROOT):
         first = calendar(record["first_calendar_version"])
         if sequence < 20 or calendar(version) < first or ((sequence == 20) != (version == record["first_calendar_version"])):
             raise ValueError("Calendar coordinate contradicts migration anchor")
+        if sequence >= FIRST_V2_SEQUENCE or calendar(version) > calendar(LAST_V1):
+            raise ValueError("Calendar v1 exceeds its immutable migration boundary")
     elif record["version_scheme"] == "legacy":
         if version != "1.2.3" or sequence != 19 or record["bundle_short_version"] != version:
             raise ValueError("Only the immutable final legacy anchor is accepted")
@@ -84,10 +120,15 @@ def reserve(summary, root=ROOT, now=None):
     now = now or dt.datetime.now(dt.timezone.utc)
     if now.utcoffset() != dt.timedelta(0):
         raise ValueError("Reservation must use UTC")
-    version = now.strftime("%y.%m.%d.%H.%M.%S")
-    if not 2000 <= now.year <= 2099:
+    version = now.strftime("%y%m%d%H%M%S") + ".0.0"
+    if not 2010 <= now.year <= 2099:
         raise ValueError("Unsupported UTC year")
-    if old["version_scheme"] == SCHEME and calendar(version) <= calendar(old["version"]):
+    if old["version_scheme"] not in (SCHEME_V1, SCHEME):
+        raise ValueError("Migrate only from the approved calendar-v1 anchor")
+    if old["version_scheme"] == SCHEME_V1 and (old["version"] != LAST_V1 or old["release_sequence"] != FIRST_V2_SEQUENCE - 1):
+        raise ValueError("Migration requires the exact final v1 anchor")
+    previous = calendar_v2(old["version"]) if old["version_scheme"] == SCHEME else calendar(old["version"])
+    if calendar_v2(version) <= previous:
         raise ValueError("Same-second/older reservation: wait for a later UTC second")
     changelog = (root / "CHANGELOG.md").read_text()
     readme = (root / "README.md").read_text()
@@ -100,9 +141,12 @@ def reserve(summary, root=ROOT, now=None):
         raise ValueError("Missing release headings/badge")
     record = dict(old, version_scheme=SCHEME, version=version,
                   release_sequence=old["release_sequence"] + 1,
-                  bundle_short_version=bundle_version(version),
-                  last_legacy_version="1.2.3", first_calendar_sequence=20,
-                  first_calendar_version=old.get("first_calendar_version") or version)
+                  bundle_short_version=bundle_version_v2(version),
+                  legacy_version_scheme=SCHEME_V1,
+                  last_legacy_version=LAST_V1, first_calendar_sequence=FIRST_V2_SEQUENCE,
+                  first_calendar_version=old["first_calendar_version"] if old["version_scheme"] == SCHEME else version)
+    if old["version_scheme"] == SCHEME_V1:
+        record["previous_migrations"] = [{key: old[key] for key in ["last_legacy_version", "first_calendar_version", "first_calendar_sequence"]} | {"legacy_version_scheme": "legacy", "version_scheme": SCHEME_V1}]
     # All validation precedes writes. Git records this as one reservation
     # transaction; interrupted writes fail load() and must be recovered first.
     changelog = changelog.replace("## [Unreleased]\n", f"## [Unreleased]\n\n## [{version}] - {now:%Y-%m-%d}\n\n- {summary}\n", 1)

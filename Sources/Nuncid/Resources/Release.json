@@ -1,12 +1,12 @@
 {
-  "version_scheme": "inspr-calendar-v1",
-  "version": "26.09.11.10.11.21",
+  "version_scheme": "inspr-calendar-v2",
+  "version": "260911101807.0.0",
   "release_channel": "stable",
-  "release_sequence": 25,
-  "bundle_short_version": "2026.911.36682",
-  "last_legacy_version": "1.2.3",
-  "first_calendar_version": "26.09.06.17.55.27",
-  "first_calendar_sequence": 20,
+  "release_sequence": 26,
+  "bundle_short_version": "2026.911.37088",
+  "last_legacy_version": "26.09.11.10.11.21",
+  "first_calendar_version": "260911101807.0.0",
+  "first_calendar_sequence": 26,
   "retired_calendar_candidates": [
     {
       "version": "26.09.06.17.55.27",
@@ -14,6 +14,16 @@
       "reason": "Packaged self-test read the macOS compatibility value as the canonical version",
       "source_commit": "46562f9a41f0ed9838e5fc32315a014afee713b0",
       "ci_run": 34055006645
+    }
+  ],
+  "legacy_version_scheme": "inspr-calendar-v1",
+  "previous_migrations": [
+    {
+      "last_legacy_version": "1.2.3",
+      "first_calendar_version": "26.09.06.17.55.27",
+      "first_calendar_sequence": 20,
+      "legacy_version_scheme": "legacy",
+      "version_scheme": "inspr-calendar-v1"
     }
   ]
 }

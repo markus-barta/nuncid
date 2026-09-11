@@ -18,6 +18,7 @@ bundle_version=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' 
 [[ "$(/usr/libexec/PlistBuddy -c 'Print :NuncidReleaseChannel' "$plist")" == stable ]]
 [[ "$(/usr/libexec/PlistBuddy -c 'Print :NuncidReleaseSequence' "$plist")" == "$(python3 "$repo_dir/scripts/release-policy.py" field release_sequence)" ]]
 cmp "$repo_dir/Sources/Nuncid/Resources/Release.json" "$app/Contents/Resources/Release.json"
+cmp "$repo_dir/Sources/Nuncid/Resources/calendar-version-display.json" "$app/Contents/Resources/calendar-version-display.json"
 codesign --verify --deep --strict "$app"
 unzip -tq "$archive" >/dev/null
 

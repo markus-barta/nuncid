@@ -72,14 +72,14 @@ struct SemanticVersion: Comparable, Equatable {
 enum AppUpdateState: Equatable {
     case checking
     case current
-    case available(version: String, url: URL)
+    case available(version: String, url: URL, scheme: VersionScheme = .legacy)
     case unavailable
 
     var menuTitle: String {
         switch self {
         case .checking: return "Checking for updates…"
         case .current: return "Nuncid is up to date"
-        case let .available(version, _): return "Update to Version \(version) available"
+        case let .available(version, _, _): return "Update to Version \(version) available"
         case .unavailable: return "Update status unavailable"
         }
     }
@@ -189,7 +189,7 @@ enum CanonicalReleasePolicy {
         }
         guard let isNewer = release.isNewerThan(installed) else { return .unavailable }
         guard isNewer else { return .current }
-        return .available(version: payload.tagName.hasPrefix("v") ? String(payload.tagName.dropFirst()) : payload.tagName, url: releaseURL)
+        return .available(version: release.rawVersion, url: releaseURL, scheme: release.scheme)
     }
 
     private static func releaseIdentity(from tag: String, body: String?) -> ReleaseIdentity? {
@@ -408,10 +408,16 @@ enum CanonicalReleaseChecker {
             installedVersion: NuncidBrand.version,
             updateState: updateState
         )
-        addDisabledItem(headerTitles[0], to: menu)
+        let installedItem = addDisabledItem(headerTitles[0], to: menu)
+        installedItem.attributedTitle = VersionDisplay.attributed(NuncidBrand.version, scheme: NuncidBrand.versionScheme,
+            prefix: "Nuncid version ", font: .monospacedSystemFont(ofSize: 13, weight: .regular))
         switch updateState {
-        case let .available(_, url):
-            addActionItem(headerTitles[1], to: menu) { NSWorkspace.shared.open(url) }
+        case let .available(version, url, scheme):
+            let item = addActionItem(headerTitles[1], to: menu) { NSWorkspace.shared.open(url) }
+            let title = NSMutableAttributedString(attributedString: VersionDisplay.attributed(version, scheme: scheme,
+                prefix: "Update to Version ", font: .monospacedSystemFont(ofSize: 13, weight: .regular)))
+            title.append(NSAttributedString(string: " available"))
+            item.attributedTitle = title
         case .checking, .current, .unavailable:
             addDisabledItem(headerTitles[1], to: menu)
         }
@@ -453,11 +459,13 @@ enum CanonicalReleaseChecker {
         }
     }
 
-    private func addDisabledItem(_ title: String, image: String? = nil, to menu: NSMenu) {
+    @discardableResult
+    private func addDisabledItem(_ title: String, image: String? = nil, to menu: NSMenu) -> NSMenuItem {
         let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
         item.isEnabled = false
         if let image { item.image = NSImage(systemSymbolName: image, accessibilityDescription: nil) }
         menu.addItem(item)
+        return item
     }
 
     @discardableResult
