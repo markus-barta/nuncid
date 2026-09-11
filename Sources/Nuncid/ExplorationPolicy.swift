@@ -5,11 +5,13 @@ import AppKit
 struct ExplorationPreferences: Equatable {
     var hoverMilliseconds = 100
     var parallelLookups = 3
+    var refreshOnSourceWindowChanges = false
 
     static func load(defaults: UserDefaults = .standard) -> Self {
         Self(
             hoverMilliseconds: defaults.object(forKey: "exploration.hoverMilliseconds") == nil ? 100 : min(500, max(0, defaults.integer(forKey: "exploration.hoverMilliseconds"))),
-            parallelLookups: defaults.object(forKey: "exploration.parallelLookups") == nil ? 3 : min(5, max(1, defaults.integer(forKey: "exploration.parallelLookups")))
+            parallelLookups: defaults.object(forKey: "exploration.parallelLookups") == nil ? 3 : min(5, max(1, defaults.integer(forKey: "exploration.parallelLookups"))),
+            refreshOnSourceWindowChanges: defaults.bool(forKey: "exploration.refreshOnSourceWindowChanges")
         )
     }
 
@@ -25,6 +27,7 @@ struct ExplorationPreferences: Equatable {
     func persist(defaults: UserDefaults = .standard) {
         defaults.set(min(500, max(0, hoverMilliseconds)), forKey: "exploration.hoverMilliseconds")
         defaults.set(min(5, max(1, parallelLookups)), forKey: "exploration.parallelLookups")
+        defaults.set(refreshOnSourceWindowChanges, forKey: "exploration.refreshOnSourceWindowChanges")
     }
 }
 

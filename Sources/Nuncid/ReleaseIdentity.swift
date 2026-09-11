@@ -1,14 +1,41 @@
 import Foundation
 
-/// The two version schemes Nuncid can encounter, as explicit tagged values.
+/// The version schemes Nuncid can encounter, as explicit tagged values.
 /// Tooling MUST NOT infer a scheme from punctuation or segment count: strings
 /// such as `26.11.11` are syntactically plausible under more than one scheme.
 enum VersionScheme: String, Equatable, Sendable {
     case legacy = "legacy"
     case calendar = "inspr-calendar-v1"
+    case calendarV2 = "inspr-calendar-v2"
 
     static func parse(_ raw: String) -> VersionScheme? {
-        [VersionScheme.legacy, .calendar].first { $0.rawValue == raw }
+        [VersionScheme.legacy, .calendar, .calendarV2].first { $0.rawValue == raw }
+    }
+}
+
+/// Fixed-width UTC calendar v2; SemVer syntax does not imply SemVer semantics.
+struct CalendarVersionV2: Equatable, Comparable, Sendable {
+    let raw: String
+    let date: CalendarVersion
+    let coordinate: UInt64
+
+    init?(_ raw: String) {
+        let bytes = Array(raw.utf8)
+        guard bytes.count == 16, raw.hasSuffix(".0.0"),
+              bytes.prefix(12).allSatisfy({ (48...57).contains($0) }),
+              bytes[0] != 48,
+              let coordinate = UInt64(String(raw.prefix(12))) else { return nil }
+        let fields = stride(from: 0, to: 12, by: 2).map { String(decoding: bytes[$0..<($0 + 2)], as: UTF8.self) }
+        guard let date = CalendarVersion(fields.joined(separator: ".")), date.year >= 2010 else { return nil }
+        self.raw = raw; self.date = date; self.coordinate = coordinate
+    }
+
+    static func < (lhs: Self, rhs: Self) -> Bool { lhs.coordinate < rhs.coordinate }
+    var macOSShortVersion: String { date.macOSShortVersion }
+
+    static func fromMacOSShortVersion(_ raw: String) -> Self? {
+        guard let date = CalendarVersion.fromMacOSShortVersion(raw), date.longForm else { return nil }
+        return Self(date.raw.replacingOccurrences(of: ".", with: "") + ".0.0")
     }
 }
 
@@ -90,6 +117,7 @@ struct ReleaseBuildRecord: Decodable {
     let release_sequence: Int
     let bundle_short_version: String
     let last_legacy_version: String
+    let legacy_version_scheme: String?
     let first_calendar_version: String?
     let first_calendar_sequence: Int
 
@@ -102,6 +130,16 @@ struct ReleaseBuildRecord: Decodable {
                   last_legacy_version == ReleaseMigration.lastLegacyVersion,
                   first_calendar_sequence == ReleaseMigration.firstCalendarSequence,
                   let first = first_calendar_version.flatMap(CalendarVersion.init),
+                  value >= first,
+                  (release_sequence == first_calendar_sequence) == (version == first_calendar_version) else { return nil }
+        } else if scheme == .calendarV2 {
+            guard let value = CalendarVersionV2(version),
+                  value.macOSShortVersion == bundle_short_version,
+                  legacy_version_scheme == VersionScheme.calendar.rawValue,
+                  last_legacy_version == ReleaseMigration.lastCalendarV1Version,
+                  first_calendar_sequence == ReleaseMigration.firstCalendarV2Sequence,
+                  let first = first_calendar_version.flatMap(CalendarVersionV2.init),
+                  first.date > CalendarVersion(ReleaseMigration.lastCalendarV1Version)!,
                   value >= first,
                   (release_sequence == first_calendar_sequence) == (version == first_calendar_version) else { return nil }
         }
@@ -143,6 +181,8 @@ enum ReleaseMigration {
     // still SemVer; the calendar candidate must record its actual reservation.
     static let calendarNotBefore = "26.09.06"
     static let firstCalendarSequence = 20
+    static let lastCalendarV1Version = "26.09.11.10.11.21"
+    static let firstCalendarV2Sequence = 26
     static let legacyVersions = [
         "0.1.0", "0.2.0", "0.2.1", "0.2.2", "0.3.0", "0.3.1",
         "0.3.2", "0.3.3", "0.4.0", "0.5.0", "0.5.1", "0.5.2",
@@ -158,15 +198,24 @@ struct ReleaseIdentity: Equatable, Sendable {
     let rawVersion: String
     let sequence: Int
     private(set) var calendar: CalendarVersion?
+    private(set) var calendarV2: CalendarVersionV2?
     private(set) var legacy: SemanticVersion?
 
     init?(rawVersion: String, scheme: VersionScheme, sequence: Int? = nil) {
         guard !rawVersion.isEmpty else { return nil }
         switch scheme {
+        case .calendarV2:
+            guard let value = CalendarVersionV2(rawVersion),
+                  value.date > CalendarVersion(ReleaseMigration.lastCalendarV1Version)!,
+                  let sequence, sequence >= ReleaseMigration.firstCalendarV2Sequence else { return nil }
+            self.sequence = sequence; self.scheme = scheme; self.rawVersion = rawVersion
+            self.calendarV2 = value
         case .calendar:
             guard let calendar = CalendarVersion(rawVersion),
                   calendar >= CalendarVersion(ReleaseMigration.calendarNotBefore)!,
-                  let sequence, sequence >= ReleaseMigration.firstCalendarSequence else { return nil }
+                  calendar <= CalendarVersion(ReleaseMigration.lastCalendarV1Version)!,
+                  let sequence, sequence >= ReleaseMigration.firstCalendarSequence,
+                  sequence < ReleaseMigration.firstCalendarV2Sequence else { return nil }
             self.sequence = sequence
             self.scheme = .calendar
             self.rawVersion = rawVersion
@@ -194,6 +243,16 @@ struct ReleaseIdentity: Equatable, Sendable {
     /// (fail closed): the caller must not offer an update on nil.
     func isNewerThan(_ other: ReleaseIdentity) -> Bool? {
         switch (scheme, other.scheme) {
+        case (.calendarV2, .calendarV2):
+            guard let lhs = calendarV2, let rhs = other.calendarV2,
+                  (lhs == rhs && sequence == other.sequence)
+                    || (lhs > rhs && sequence > other.sequence)
+                    || (lhs < rhs && sequence < other.sequence) else { return nil }
+            return lhs > rhs
+        case (.calendarV2, _):
+            return sequence >= ReleaseMigration.firstCalendarV2Sequence && other.sequence < ReleaseMigration.firstCalendarV2Sequence
+        case (_, .calendarV2):
+            return false
         case (.calendar, .calendar):
             guard let selfCalendar = calendar, let otherCalendar = other.calendar else { return nil }
             guard (selfCalendar == otherCalendar && sequence == other.sequence)

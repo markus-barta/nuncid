@@ -2,6 +2,30 @@
 
 ## [Unreleased]
 
+## [260911121955.0.0] - 2026-09-11
+
+- Publish steady detection, guided permissions and calendar v2 (NUNCID-79)
+
+## [260911105655.0.0] - 2026-09-11
+
+- Guide Screen Recording setup with app drag-and-drop and restart (NUNCID-83)
+
+## [260911103820.0.0] - 2026-09-11
+
+- Open only the populated Nuncid settings window (NUNCID-78)
+
+## [260911103102.0.0] - 2026-09-11
+
+- Complete the Nuncid identity and preserve existing settings (NUNCID-78)
+
+## [260911101807.0.0] - 2026-09-11
+
+- Calendar v2 versions with consistent weighted system-color display
+
+## [26.09.11.10.11.21] - 2026-09-11
+
+- Steady detection in live terminals with optional source-window refresh
+
 ## [26.09.07.17.32.24] - 2026-09-07
 
 - NUNCID-72: persistent detection toggle, one pin-aware inspection header, and remembered 30–300% screen-bounded zoom.

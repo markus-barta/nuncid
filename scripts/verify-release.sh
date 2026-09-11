@@ -10,6 +10,8 @@ plist="$app/Contents/Info.plist"
 "$repo_dir/scripts/check-release-consistency.sh"
 [[ -d "$app" ]] || { print -u2 "Missing $app"; exit 1; }
 [[ -f "$archive" ]] || { print -u2 "Missing $archive"; exit 1; }
+[[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$plist")" == at.markusbarta.nuncid ]]
+codesign --verify --strict -R '=identifier "at.markusbarta.nuncid"' "$app"
 
 bundle_version=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$plist")
 [[ "$bundle_version" == "$(python3 "$repo_dir/scripts/release-policy.py" field bundle_short_version)" ]]
@@ -18,6 +20,7 @@ bundle_version=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' 
 [[ "$(/usr/libexec/PlistBuddy -c 'Print :NuncidReleaseChannel' "$plist")" == stable ]]
 [[ "$(/usr/libexec/PlistBuddy -c 'Print :NuncidReleaseSequence' "$plist")" == "$(python3 "$repo_dir/scripts/release-policy.py" field release_sequence)" ]]
 cmp "$repo_dir/Sources/Nuncid/Resources/Release.json" "$app/Contents/Resources/Release.json"
+cmp "$repo_dir/Sources/Nuncid/Resources/calendar-version-display.json" "$app/Contents/Resources/calendar-version-display.json"
 codesign --verify --deep --strict "$app"
 unzip -tq "$archive" >/dev/null
 

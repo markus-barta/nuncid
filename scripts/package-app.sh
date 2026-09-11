@@ -10,6 +10,7 @@ if [[ "$signing_identity" != "-" ]]; then
   signing_mode=developer-id
 fi
 python3 "$repo_dir/scripts/release-policy.py" validate >/dev/null
+python3 "$repo_dir/scripts/check-calendar-display.py"
 bundle_version=$(python3 "$repo_dir/scripts/release-policy.py" field bundle_short_version)
 version_scheme=$(python3 "$repo_dir/scripts/release-policy.py" field version_scheme)
 release_sequence=$(python3 "$repo_dir/scripts/release-policy.py" field release_sequence)
@@ -23,6 +24,7 @@ rm -rf "$app_dir/Contents/Resources/Brand"
 cp -R "$repo_dir/Sources/Nuncid/Resources/Brand" "$app_dir/Contents/Resources/Brand"
 cp "$repo_dir/LICENSE" "$app_dir/Contents/Resources/LICENSE"
 cp "$repo_dir/Sources/Nuncid/Resources/Release.json" "$app_dir/Contents/Resources/Release.json"
+cp "$repo_dir/Sources/Nuncid/Resources/calendar-version-display.json" "$app_dir/Contents/Resources/calendar-version-display.json"
 chmod +x "$app_dir/Contents/MacOS/Nuncid"
 icon_work=$(mktemp -d)
 trap 'rm -rf "$icon_work"' EXIT
@@ -37,7 +39,7 @@ done
 iconutil -c icns "$iconset" -o "$app_dir/Contents/Resources/Nuncid.icns"
 /usr/libexec/PlistBuddy -c 'Clear dict' "$app_dir/Contents/Info.plist" 2>/dev/null || true
 /usr/libexec/PlistBuddy -c 'Add :CFBundleExecutable string Nuncid' "$app_dir/Contents/Info.plist"
-/usr/libexec/PlistBuddy -c 'Add :CFBundleIdentifier string at.markusbarta.glint' "$app_dir/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c 'Add :CFBundleIdentifier string at.markusbarta.nuncid' "$app_dir/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c 'Add :CFBundleName string Nuncid' "$app_dir/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c 'Add :CFBundleDisplayName string Nuncid' "$app_dir/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c 'Add :CFBundleIconFile string Nuncid' "$app_dir/Contents/Info.plist"
@@ -58,7 +60,7 @@ if [[ "$signing_mode" == developer-id ]]; then
   print -r -- "Signed with Developer ID identity: $signing_identity" >&2
 else
   codesign --force --sign - \
-    --requirements '=designated => identifier "at.markusbarta.glint"' \
+    --requirements '=designated => identifier "at.markusbarta.nuncid"' \
     "$app_dir"
   print -r -- 'Signed locally (ad hoc); this build is not notarized.' >&2
 fi

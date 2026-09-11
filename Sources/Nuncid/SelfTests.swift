@@ -29,6 +29,78 @@ private actor ResolverConcurrencyProbe {
 }
 
 @MainActor enum SelfTests {
+    private static func verifyCalendarV2() {
+        let valid = ["100101000000.0.0", "260911101807.0.0", "280229235959.0.0", "991231235959.0.0"]
+        let invalid = ["090101000000.0.0", "260229120000.0.0", "260431120000.0.0", "260911240000.0.0",
+                       "260911126000.0.0", "260911120060.0.0", "260911120000.0.1", "260911120000.1.0",
+                       "260911120000", "260911120000.0.0-rc1", "260911120000.0.0+build", "v260911120000.0.0",
+                       "260911120000.0.0\n", "26.09.11.12.00.00", "1.2.3", "20260911120000.0.0"]
+        guard valid.allSatisfy({ raw in
+            guard let value = CalendarVersionV2(raw) else { return false }
+            return CalendarVersionV2.fromMacOSShortVersion(value.macOSShortVersion)?.raw == raw
+        }), invalid.allSatisfy({ CalendarVersionV2($0) == nil }),
+              CalendarVersionV2.fromMacOSShortVersion("2026.911.0") == nil else {
+            fputs("self-test failed: calendar v2 grammar, real dates and injective bundle mapping\n", stderr); exit(1)
+        }
+        let first = ReleaseIdentity(rawVersion: "260911101807.0.0", scheme: .calendarV2, sequence: 26)!
+        let next = ReleaseIdentity(rawVersion: "260911101808.0.0", scheme: .calendarV2, sequence: 27)!
+        let finalV1 = ReleaseIdentity(rawVersion: ReleaseMigration.lastCalendarV1Version, scheme: .calendar, sequence: 25)!
+        let legacy = ReleaseIdentity(rawVersion: "1.2.3", scheme: .legacy)!
+        guard first.isNewerThan(finalV1) == true, finalV1.isNewerThan(first) == false,
+              first.isNewerThan(legacy) == true, legacy.isNewerThan(first) == false,
+              next.isNewerThan(first) == true, first.isNewerThan(next) == false,
+              first.isNewerThan(first) == false,
+              ReleaseIdentity(rawVersion: "260911101808.0.0", scheme: .calendarV2, sequence: 26)!.isNewerThan(first) == nil,
+              ReleaseIdentity(rawVersion: first.rawVersion, scheme: .calendarV2, sequence: 25) == nil,
+              ReleaseIdentity(rawVersion: first.rawVersion, scheme: .calendar) == nil,
+              ReleaseIdentity.unclassified(first.rawVersion) == nil,
+              ReleaseIdentity(rawVersion: "26.09.12", scheme: .calendar, sequence: 26) == nil else {
+            fputs("self-test failed: v1/v2/legacy anchor ordering and fail-closed metadata\n", stderr); exit(1)
+        }
+        let text = VersionDisplay.attributed(first.rawVersion, scheme: first.scheme, prefix: "v",
+            font: .monospacedSystemFont(ofSize: 13, weight: .regular))
+        guard text.string == "v" + first.rawVersion else { exit(1) }
+        for (segment, position) in [("v", 0), ("yy", 1), ("mm", 3), ("dd", 5), ("hh", 7), ("mi", 9), ("ss", 11), ("tail", 13)] {
+            guard let color = text.attribute(.foregroundColor, at: position, effectiveRange: nil) as? NSColor,
+                  let resolved = color.usingColorSpace(.sRGB),
+                  abs(resolved.alphaComponent - NSColor.labelColor.alphaComponent * VersionDisplay.design.weights[segment]!) < 0.001 else {
+                fputs("self-test failed: native attributed version weights follow pinned design\n", stderr); exit(1)
+            }
+        }
+        let plain = VersionDisplay.attributed(finalV1.rawVersion, scheme: finalV1.scheme,
+            font: .monospacedSystemFont(ofSize: 13, weight: .regular))
+        var runs = 0
+        plain.enumerateAttributes(in: NSRange(location: 0, length: plain.length)) { _, _, _ in runs += 1 }
+        guard plain.string == finalV1.rawVersion, runs == 1 else { exit(1) }
+        for (name, dark) in [(NSAppearance.Name.aqua, false), (.darkAqua, true)] {
+            let rendered = VersionDisplay.attributed(first.rawVersion, scheme: .calendarV2,
+                font: .monospacedSystemFont(ofSize: 13, weight: .regular), appearance: NSAppearance(named: name))
+            guard let color = rendered.attribute(.foregroundColor, at: 6, effectiveRange: nil) as? NSColor,
+                  let rgb = color.usingColorSpace(.sRGB), (rgb.redComponent > 0.5) == dark else {
+                fputs("self-test failed: version text follows the view light/dark appearance\n", stderr); exit(1)
+            }
+        }
+        let url = URL(string: "https://github.com/markus-barta/nuncid/releases/tag/v\(first.rawVersion)")!
+        func payload(scheme: String?) -> Data {
+            var value: [String: Any] = ["tag_name": "v" + first.rawVersion, "html_url": url.absoluteString, "draft": false, "prerelease": false]
+            if let scheme {
+                value["body"] = "<!-- nuncid-release-metadata\nversion-scheme: \(scheme)\nversion: \(first.rawVersion)\nrelease-channel: stable\nrelease-sequence: 26\n-->"
+            }
+            return try! JSONSerialization.data(withJSONObject: value)
+        }
+        guard CanonicalReleasePolicy.evaluate(installed: finalV1, data: payload(scheme: "inspr-calendar-v2"),
+                  responseURL: CanonicalReleasePolicy.endpoint, statusCode: 200)
+                == .available(version: first.rawVersion, url: url, scheme: .calendarV2),
+              CanonicalReleasePolicy.evaluate(installed: next, data: payload(scheme: "inspr-calendar-v2"),
+                  responseURL: CanonicalReleasePolicy.endpoint, statusCode: 200) == .current,
+              [nil, "unknown", "legacy", "inspr-calendar-v1"].allSatisfy({ scheme in
+                  CanonicalReleasePolicy.evaluate(installed: finalV1, data: payload(scheme: scheme),
+                      responseURL: CanonicalReleasePolicy.endpoint, statusCode: 200) == .unavailable
+              }) else {
+            fputs("self-test failed: v2 updater transition, rollback and explicit scheme propagation\n", stderr); exit(1)
+        }
+    }
+
     private static func verifyResolverConcurrency() {
         let finished = DispatchSemaphore(value: 0)
         let result = SelfTestAsyncResult()
@@ -88,7 +160,7 @@ private actor ResolverConcurrencyProbe {
         }
         let suite = "nuncid-marker-tests-\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!
-        defer { defaults.removePersistentDomain(forName: suite) }
+        defer { defaults.removePersistentDomain(forName: suite); defaults.synchronize() }
         defaults.set("sentinel", forKey: "inspectHotKey")
         let notified = SelfTestAsyncResult()
         let observer = NotificationCenter.default.addObserver(forName: .nuncidMarkerAppearanceDidChange, object: nil, queue: nil) { _ in notified.set(true) }
@@ -211,8 +283,26 @@ private actor ResolverConcurrencyProbe {
         }
         let suite = "nuncid-exploration-tests-\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!
-        defer { defaults.removePersistentDomain(forName: suite) }
+        defer { defaults.removePersistentDomain(forName: suite); defaults.synchronize() }
         guard ExplorationPreferences.load(defaults: defaults) == ExplorationPreferences() else { exit(1) }
+        guard !ExplorationPreferences.load(defaults: defaults).refreshOnSourceWindowChanges else {
+            fputs("self-test failed: automatic source refresh defaults off\n", stderr); exit(1)
+        }
+        var refreshPreferences = ExplorationPreferences(hoverMilliseconds: 175, parallelLookups: 2)
+        refreshPreferences.refreshOnSourceWindowChanges = true
+        refreshPreferences.persist(defaults: defaults)
+        guard ExplorationPreferences.load(defaults: defaults) == refreshPreferences else {
+            fputs("self-test failed: automatic source refresh opt-in persists\n", stderr); exit(1)
+        }
+        refreshPreferences.refreshOnSourceWindowChanges = false
+        refreshPreferences.persist(defaults: defaults)
+        guard ExplorationPreferences.load(defaults: defaults) == refreshPreferences else {
+            fputs("self-test failed: automatic source refresh opt-out preserves other settings\n", stderr); exit(1)
+        }
+        defaults.removeObject(forKey: "exploration.refreshOnSourceWindowChanges")
+        guard ExplorationPreferences.load(defaults: defaults) == refreshPreferences else {
+            fputs("self-test failed: existing preferences upgrade with automatic source refresh off\n", stderr); exit(1)
+        }
         ExplorationPreferences(hoverMilliseconds: -1, parallelLookups: 99).persist(defaults: defaults)
         defaults.set("off", forKey: "activation.mode")
         ExplorationPreferences.migrateShortcutIfNeeded(defaults: defaults)
@@ -333,9 +423,22 @@ private actor ResolverConcurrencyProbe {
     }
 
     static func runAndExit() -> Never {
+        run()
+        exit(0)
+    }
+
+    // Return normally before exit so isolated preference domains are cleaned up.
+    private static func run() {
         verifyMenuBarIconPresentation()
         verifyMenuBarTargetSelection()
         verifyExploration()
+        verifyCalendarV2()
+        let permissionFailures = PermissionChecks.run()
+        guard permissionFailures.isEmpty else {
+            fputs("self-test failed: permission setup: \(permissionFailures.joined(separator: "; "))\n", stderr); exit(1)
+        }
+        do { try IdentityMigrationChecks.run() }
+        catch { fputs("self-test failed: identity migration: \(error)\n", stderr); exit(1) }
         verifyMarkerAppearance()
         verifyResolverConcurrency()
         let inspectionFailures = InspectionChecks.run()
@@ -566,7 +669,7 @@ private actor ResolverConcurrencyProbe {
             == .available(version: "1.2.1", url: URL(string: "https://github.com/markus-barta/nuncid/releases/tag/v1.2.1")!),
         CanonicalReleasePolicy.evaluate(installed: legacyIdentity("1.2.1"),
             data: calendarRelease, responseURL: canonicalEndpoint, statusCode: 200)
-            == .available(version: "26.09.06", url: URL(string: "https://github.com/markus-barta/nuncid/releases/tag/v26.09.06")!),
+            == .available(version: "26.09.06", url: URL(string: "https://github.com/markus-barta/nuncid/releases/tag/v26.09.06")!, scheme: .calendar),
         ReleaseIdentity(rawVersion: "26.09.06", scheme: .calendar) == nil,
         ReleaseIdentity(rawVersion: "1.2.1", scheme: .legacy, sequence: 16) == nil,
         ReleaseIdentity(rawVersion: "26.09.06.10.30.00", scheme: .calendar, sequence: firstSequence)!
@@ -624,7 +727,7 @@ private actor ResolverConcurrencyProbe {
             responseURL: canonicalEndpoint, statusCode: 200
         ) == .available(
             version: "26.09.06",
-            url: URL(string: "https://github.com/markus-barta/nuncid/releases/tag/v26.09.06")!
+            url: URL(string: "https://github.com/markus-barta/nuncid/releases/tag/v26.09.06")!, scheme: .calendar
         ), CanonicalReleasePolicy.evaluate(
             installed: calendarIdentity("26.09.06"), data: calendarRelease,
             responseURL: canonicalEndpoint, statusCode: 200
@@ -638,7 +741,7 @@ private actor ResolverConcurrencyProbe {
             responseURL: canonicalEndpoint, statusCode: 200
         ) == .available(
             version: "26.09.06.10.30.00",
-            url: URL(string: "https://github.com/markus-barta/nuncid/releases/tag/v26.09.06.10.30.00")!
+            url: URL(string: "https://github.com/markus-barta/nuncid/releases/tag/v26.09.06.10.30.00")!, scheme: .calendar
         ),
         CanonicalReleasePolicy.evaluate(
             installed: legacyIdentity("1.2.0"), data: mismatchedMetadata,
@@ -660,15 +763,17 @@ private actor ResolverConcurrencyProbe {
             exit(1)
         }
         let packagedVersion = NuncidBrand.version == "Development" ? catalogueVersion : NuncidBrand.version
-        if Bundle.main.bundleIdentifier == "at.markusbarta.glint" {
-            guard let rawScheme = Bundle.main.object(forInfoDictionaryKey: "NuncidVersionScheme") as? String,
+        if Bundle.main.bundleURL.pathExtension == "app" {
+            guard Bundle.main.bundleIdentifier == AppIdentity.bundleIdentifier,
+                  let rawScheme = Bundle.main.object(forInfoDictionaryKey: "NuncidVersionScheme") as? String,
                   let scheme = VersionScheme.parse(rawScheme),
                   let sequence = Bundle.main.object(forInfoDictionaryKey: "NuncidReleaseSequence") as? Int,
                   Bundle.main.object(forInfoDictionaryKey: "NuncidReleaseChannel") as? String == ReleaseMigration.channel,
                   let identity = ReleaseIdentity(rawVersion: packagedVersion, scheme: scheme, sequence: sequence),
                   let external = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String,
-                  external == (identity.calendar?.macOSShortVersion ?? packagedVersion),
-                  identity.calendar == nil || CalendarVersion.fromMacOSShortVersion(external)?.raw == packagedVersion else {
+                  external == (identity.calendarV2?.macOSShortVersion ?? identity.calendar?.macOSShortVersion ?? packagedVersion),
+                  identity.calendar == nil || CalendarVersion.fromMacOSShortVersion(external)?.raw == packagedVersion,
+                  identity.calendarV2 == nil || CalendarVersionV2.fromMacOSShortVersion(external)?.raw == packagedVersion else {
                 fputs("self-test failed: packaged release identity\n", stderr); exit(1)
             }
         }
@@ -710,7 +815,7 @@ private actor ResolverConcurrencyProbe {
             fputs("self-test failed: isolated preferences\n", stderr)
             exit(1)
         }
-        defer { defaults.removePersistentDomain(forName: suite) }
+        defer { defaults.removePersistentDomain(forName: suite); defaults.synchronize() }
         defaults.set("always", forKey: "triggerMode")
         let customInspect = HotKey(keyCode: 2, modifiers: [.command, .control], keyLabel: "D")
         let f19 = HotKey(keyCode: 80, modifiers: [], keyLabel: "F19")
@@ -839,6 +944,7 @@ private actor ResolverConcurrencyProbe {
                 fputs("self-test failed: legacy activation migration \(legacy)\n", stderr); exit(1)
             }
             migrationDefaults.removePersistentDomain(forName: migrationSuite)
+            migrationDefaults.synchronize()
         }
         let corruptSuite = "NuncidSelfTests.CorruptActivation.\(UUID().uuidString)"
         guard let corruptDefaults = UserDefaults(suiteName: corruptSuite) else { exit(1) }
@@ -847,6 +953,7 @@ private actor ResolverConcurrencyProbe {
             fputs("self-test failed: corrupt activation mode fallback\n", stderr); exit(1)
         }
         corruptDefaults.removePersistentDomain(forName: corruptSuite)
+        corruptDefaults.synchronize()
         guard !HoverInvocationPolicy.shouldTrigger(
             preferences: .init(mode: .off, scanFeedbackEnabled: true),
             hoverEnabled: true, stableDuration: 10, locationAlreadyScanned: false
@@ -1469,6 +1576,5 @@ private actor ResolverConcurrencyProbe {
             fputs("self-test failed: subprocess cancellation propagation\n", stderr); exit(1)
         }
         print("Nuncid self-tests passed")
-        exit(0)
     }
 }

@@ -19,6 +19,9 @@ import SwiftUI
         }
         return nil
     }
+    static func resourceURL(named name: String, extension ext: String) -> URL? {
+        resourceBundles.lazy.compactMap { $0.url(forResource: name, withExtension: ext) }.first
+    }
     static var appIcon: NSImage {
         image(named: "nuncid-app-icon-1024") ?? NSApp.applicationIconImage
     }
@@ -97,7 +100,11 @@ import SwiftUI
     @Published var inspectHotKey: HotKey? { didSet { NuncidPreferences.save(inspectHotKey, key: "inspectHotKey"); configureHotKeys() } }
     @Published var pinHotKey: HotKey? { didSet { NuncidPreferences.save(pinHotKey, key: "pinHotKey"); configureHotKeys() } }
     @Published var hotKeyError: String?
-    @Published var screenRecordingGranted: Bool
+    let permissionFlow = ScreenRecordingPermissionFlow()
+    var canDetect: Bool { screenRecordingGranted && !permissionFlow.needsGuidance }
+    @Published var screenRecordingGranted: Bool {
+        didSet { permissionFlow.update(granted: screenRecordingGranted) }
+    }
     @Published var activity = "Ready"
     @Published private(set) var hoverScanningEnabled = false
     @Published private(set) var hoverMatchFound = false
@@ -136,7 +143,7 @@ import SwiftUI
         popupInteractionPreferences = popupInteraction
         inspectHotKey = preferences.inspectHotKey
         pinHotKey = preferences.pinHotKey
-        screenRecordingGranted = CGPreflightScreenCaptureAccess()
+        screenRecordingGranted = permissionFlow.granted
         hotKeyMonitor = GlobalHotKeyMonitor()
         coordinator = HoverCoordinator(appState: self)
         hotKeyMonitor.onCommand = { [weak self] command in
@@ -177,11 +184,7 @@ import SwiftUI
         activity = "Titles and learned context cleared"
     }
     func requestScreenRecording() {
-        screenRecordingGranted = CGRequestScreenCaptureAccess() || CGPreflightScreenCaptureAccess()
-        if !screenRecordingGranted,
-           let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture") {
-            NSWorkspace.shared.open(url)
-        }
+        permissionFlow.openSystemSettings()
     }
     func openSettings() {
         if settingsWindowController == nil { settingsWindowController = SettingsWindowController(state: self) }
@@ -251,7 +254,7 @@ import SwiftUI
     @discardableResult
     func performMenuBarScan() -> MenuBarScanOutcome {
         let enabled = coordinator.toggleMenuTargetSelection()
-        return enabled ? (screenRecordingGranted ? .armed : .permissionRequired) : .cancelled
+        return enabled ? (canDetect ? .armed : .permissionRequired) : .cancelled
     }
 
     func setExplorationState(active: Bool, found: Bool, activity: String) {
@@ -389,6 +392,39 @@ import SwiftUI
 @MainActor final class AppDelegate: NSObject, NSApplicationDelegate {
     private var state: AppState?
     private var statusItemController: NuncidStatusItemController?
+
+    // AppKit owns all windows. Keep normal keyboard commands without creating
+    // a second, empty SwiftUI Settings scene that macOS can open or restore.
+    private func installApplicationMenu() {
+        let menu = NSMenu()
+        let application = NSMenu(title: "Nuncid")
+        for (title, action, key) in [
+            ("About Nuncid", #selector(openAbout), ""),
+            ("Settings…", #selector(openSettings), ",")
+        ] {
+            let item = application.addItem(withTitle: title, action: action, keyEquivalent: key)
+            item.target = self
+        }
+        application.addItem(.separator())
+        application.addItem(withTitle: "Quit Nuncid", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        let edit = NSMenu(title: "Edit")
+        for (title, action, key) in [("Undo", "undo:", "z"), ("Cut", "cut:", "x"),
+                                    ("Copy", "copy:", "c"), ("Paste", "paste:", "v"),
+                                    ("Select All", "selectAll:", "a")] {
+            edit.addItem(withTitle: title, action: NSSelectorFromString(action), keyEquivalent: key)
+        }
+        let window = NSMenu(title: "Window")
+        window.addItem(withTitle: "Close", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
+        for submenu in [application, edit, window] {
+            let item = NSMenuItem(title: submenu.title, action: nil, keyEquivalent: "")
+            item.submenu = submenu
+            menu.addItem(item)
+        }
+        NSApp.mainMenu = menu
+    }
+
+    @objc private func openSettings() { state?.openSettings() }
+    @objc private func openAbout() { state?.openAbout() }
 #if DEBUG
     private var probeOverlay: OverlayController?
     private var probeScanFeedback: [ScanFeedbackController] = []
@@ -420,6 +456,35 @@ import SwiftUI
 #endif
         NSApp.setActivationPolicy(.accessory)
 #if DEBUG
+        if let index = CommandLine.arguments.firstIndex(of: "--permission-capture-probe"),
+           CommandLine.arguments.indices.contains(index + 2) {
+            let output = URL(fileURLWithPath: CommandLine.arguments[index + 1])
+            let appURL = URL(fileURLWithPath: CommandLine.arguments[index + 2])
+            let flow = ScreenRecordingPermissionFlow(granted: false, appURL: appURL)
+            let helper = CommandLine.arguments.contains("--permission-helper-probe")
+            if !helper {
+                let overlay = OverlayController(allowsCapture: true)
+                overlay.configurePermissionGuide(flow)
+                overlay.showExploration([], status: nil, near: NuncidWindowPlacement.probeScreen?.visibleFrame.origin ?? NSEvent.mouseLocation)
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                    overlay.captureProbe(to: output)
+                    Darwin.exit(FileManager.default.fileExists(atPath: output.path) ? 0 : 1)
+                }
+                return
+            }
+            let window = PermissionHelperController(flow: flow).window!
+            NuncidWindowPlacement.center(window)
+            window.orderFrontRegardless()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                guard let view = window.contentView else { Darwin.exit(1) }
+                view.layoutSubtreeIfNeeded()
+                guard let bitmap = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { Darwin.exit(1) }
+                view.cacheDisplay(in: view.bounds, to: bitmap)
+                guard let data = bitmap.representation(using: .png, properties: [:]) else { Darwin.exit(1) }
+                do { try data.write(to: output); Darwin.exit(0) } catch { Darwin.exit(1) }
+            }
+            return
+        }
         if CommandLine.arguments.contains("--inspection-state-self-test") {
             Task { @MainActor in
                 let failures = await ExplorationSession.checkInspectionLifetimes()
@@ -430,11 +495,49 @@ import SwiftUI
             return
         }
 #endif
+        do {
+            try AppIdentity.migratePreferencesIfNeeded()
+        } catch {
+            let alert = NSAlert()
+            alert.messageText = "Nuncid couldn’t migrate your settings"
+            alert.informativeText = "Your previous settings are preserved. Free disk space or check your Library folder permissions, then reopen Nuncid."
+            alert.runModal()
+            NSApp.terminate(nil)
+            return
+        }
         let state = AppState()
         self.state = state
+        installApplicationMenu()
         let statusItemController = NuncidStatusItemController(state: state)
         self.statusItemController = statusItemController
 #if DEBUG
+        if CommandLine.arguments.contains("--settings-window-self-test") {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                func settingsWindows() -> [NSWindow] { NSApp.windows.filter { $0.title.contains("Settings") } }
+                guard settingsWindows().isEmpty else {
+                    fputs("self-test failed: settings window opened at startup\n", stderr); Darwin.exit(1)
+                }
+                guard let menu = NSApp.mainMenu?.items.first?.submenu,
+                      let settingsIndex = menu.items.firstIndex(where: { $0.keyEquivalent == "," }) else {
+                    fputs("self-test failed: Settings command missing\n", stderr); Darwin.exit(1)
+                }
+                menu.performActionForItem(at: settingsIndex)
+                guard settingsWindows().count == 1, let window = settingsWindows().first,
+                      window.title == "Nuncid Settings", window.isVisible,
+                      window.contentView is NSHostingView<SettingsView> else {
+                    fputs("self-test failed: settings must contain the real settings view\n", stderr); Darwin.exit(1)
+                }
+                window.close()
+                menu.performActionForItem(at: settingsIndex)
+                guard settingsWindows().count == 1, settingsWindows().first === window, window.isVisible else {
+                    fputs("self-test failed: reopening settings must reuse its populated window\n", stderr); Darwin.exit(1)
+                }
+                window.close()
+                print("Nuncid settings startup and reopen checks passed")
+                Darwin.exit(0)
+            }
+            return
+        }
         if let index = CommandLine.arguments.firstIndex(where: { ["--exploration-live-probe", "--menu-detection-live-probe"].contains($0) }), CommandLine.arguments.indices.contains(index + 1) {
             let output = URL(fileURLWithPath: CommandLine.arguments[index + 1])
             if CommandLine.arguments[index] == "--menu-detection-live-probe" { state.performMenuBarScan() }
@@ -868,7 +971,12 @@ struct SettingsView: View {
 
             Spacer()
             Button { state.openVersionHistory() } label: {
-                Label("Version \(NuncidBrand.version)", systemImage: "clock.arrow.circlepath")
+                Label {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("Version")
+                        VersionText(version: NuncidBrand.version, scheme: NuncidBrand.versionScheme, size: 12)
+                    }
+                } icon: { Image(systemName: "clock.arrow.circlepath") }
                     .font(.caption.monospacedDigit())
                     .foregroundStyle(.secondary)
             }
@@ -903,6 +1011,9 @@ struct SettingsView: View {
                 Divider()
                 Stepper("Parallel lookups: \(state.explorationPreferences.parallelLookups)", value: $state.explorationPreferences.parallelLookups, in: 1...5)
                 Text("Unchecked and checking IDs share gray dashes; unmatched IDs are dark gray with a diagonal; matches are green. Customize these in Detection Frames.").font(.caption).foregroundStyle(.secondary)
+                Divider()
+                Toggle("Refresh when source window changes", isOn: $state.explorationPreferences.refreshOnSourceWindowChanges)
+                Text("Off by default to keep detection steady in live terminals and text UIs. Turn on to rescan automatically when the source window or its title changes. Scrolling still refreshes markers; toggle detection off and on for a fresh scan.").font(.caption).foregroundStyle(.secondary)
             }
 
             HStack(alignment: .top, spacing: 12) {
@@ -1030,21 +1141,7 @@ struct SettingsView: View {
     private var privacyPage: some View {
         SettingsPage(title: "Privacy", subtitle: "Screen understanding stays on your Mac.") {
             SettingsCard {
-                HStack(alignment: .top, spacing: 14) {
-                    Image(systemName: state.screenRecordingGranted ? "checkmark.shield.fill" : "exclamationmark.shield.fill")
-                        .font(.system(size: 34))
-                        .symbolRenderingMode(.hierarchical)
-                        .foregroundStyle(state.screenRecordingGranted ? Color.green : Color.orange)
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(state.screenRecordingGranted ? "Screen Recording is allowed" : "Screen Recording permission is required")
-                            .font(.headline)
-                        Text(state.screenRecordingGranted ? "Nuncid is ready to inspect the small region beneath your pointer." : "Allow access so Nuncid can read ticket identifiers from the screen.")
-                            .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-                        if !state.screenRecordingGranted {
-                            Button("Open Privacy Settings…") { state.requestScreenRecording() }.padding(.top, 6)
-                        }
-                    }
-                }
+                PermissionPrivacyStatus(flow: state.permissionFlow)
             }
 
             SettingsCard {
@@ -1256,7 +1353,7 @@ private struct AboutView: View {
             Text("Nuncid").font(.largeTitle.weight(.bold))
             Text("Pronounced NUN-sid").font(.caption.weight(.medium)).foregroundStyle(Color.accentColor)
             Text("Ticket context, right where you point.").font(.headline).foregroundStyle(.secondary)
-            Text("Version \(NuncidBrand.version)").font(.callout.monospacedDigit()).foregroundStyle(.secondary)
+            VersionText(version: NuncidBrand.version, scheme: NuncidBrand.versionScheme, prefix: "Version ")
             Button("Version History…", action: onVersionHistory)
             Text("Reads a tiny on-screen region locally and resolves real PPM, PMA, and GitHub records—never invented placeholders.")
                 .font(.callout).foregroundStyle(.secondary).multilineTextAlignment(.center).frame(maxWidth: 330)
@@ -1274,9 +1371,13 @@ private struct AboutView: View {
     }
 }
 
-@main struct NuncidApp: App {
-    @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
-    var body: some Scene {
-        Settings { EmptyView() }
+@main @MainActor enum NuncidApp {
+    static func main() {
+        if AppRelaunch.runHelperIfRequested() { return }
+        let application = NSApplication.shared
+        let delegate = AppDelegate()
+        application.setActivationPolicy(.accessory)
+        application.delegate = delegate
+        withExtendedLifetime(delegate) { application.run() }
     }
 }

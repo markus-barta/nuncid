@@ -8,6 +8,7 @@ changelog="$repo_dir/CHANGELOG.md"
 history_file="$repo_dir/Sources/Nuncid/ReleaseHistory.swift"
 
 python3 "$repo_dir/scripts/release-policy.py" validate >/dev/null
+python3 "$repo_dir/scripts/check-calendar-display.py"
 
 grep -q "release-$version-" "$readme" || { print -u2 "README release badge does not match $version"; exit 1; }
 grep -q "Latest release $version" "$readme" || { print -u2 "README release badge alt text does not match $version"; exit 1; }
@@ -57,7 +58,7 @@ for reference in ${(f)download_references}; do
   fi
 done
 
-for stem in hero workflow lookup-highlight settings-showcase version-history; do
+for stem in hero workflow lookup-highlight settings-showcase version-history permission-guide permission-helper; do
   grep -q "docs/screenshots/$stem-$version.png" "$readme" || {
     print -u2 "README does not reference current $stem-$version.png"
     exit 1

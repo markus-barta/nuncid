@@ -195,6 +195,7 @@ enum LookupHighlightVisibilityPolicy {
 #else
         overlay = OverlayController()
 #endif
+        overlay.configurePermissionGuide(appState.permissionFlow)
         overlay.onCycleProject = { [weak self] direction in self?.cycleProject(direction) }
         overlay.onClose = { [weak self] in self?.closePinned() }
         overlay.onInput = { [weak self] event in self?.handleInput(event) }
@@ -329,7 +330,7 @@ enum LookupHighlightVisibilityPolicy {
         publishDetectionState(activity: "Detection on · Point at an ID")
         if waitForTarget || !eligibleDetectionTarget(point) { armDetectionTarget() }
         else { resumeDetectionIfAvailable() }
-        if appState?.screenRecordingGranted != true { appState?.requestScreenRecording() }
+        if appState?.canDetect != true { appState?.requestScreenRecording() }
     }
 
     private func armDetectionTarget() {
@@ -368,7 +369,7 @@ enum LookupHighlightVisibilityPolicy {
 
     private func resumeDetectionIfAvailable() {
         guard detection.enabled, !exploration.automaticEnabled, menuTargetSelection == nil else { return }
-        guard appState?.screenRecordingGranted == true else {
+        guard appState?.canDetect == true else {
             publishDetectionState(activity: "Detection paused · Screen Recording required"); return
         }
         if !NSScreen.screens.contains(where: { $0.frame.contains(detectionOrigin) }) {
@@ -383,7 +384,7 @@ enum LookupHighlightVisibilityPolicy {
         guard var selection = menuTargetSelection else { return false }
         let decision = selection.update(position: position, eligible: eligibleDetectionTarget(position),
                                         now: Date(), clicked: clicked,
-                                        permissionGranted: appState?.screenRecordingGranted == true)
+                                        permissionGranted: appState?.canDetect == true)
         menuTargetSelection = selection
         switch decision {
         case .waiting: break
@@ -426,7 +427,7 @@ enum LookupHighlightVisibilityPolicy {
             beginPinnedScanOwnership()
         }
         overlay.openPinned(shortcutLabel: pinShortcutLabel)
-        guard appState?.screenRecordingGranted == true else {
+        guard appState?.canDetect == true else {
             overlay.showPinnedStatus("Screen Recording permission is required")
             appState?.requestScreenRecording()
             return
@@ -529,7 +530,7 @@ enum LookupHighlightVisibilityPolicy {
         if CommandLine.arguments.contains("--menu-hover-active-probe") ||
             CommandLine.arguments.contains("--menu-match-probe") { return }
 #endif
-        guard appState?.screenRecordingGranted == true else { return }
+        guard appState?.canDetect == true else { return }
         guard HoverInvocationPolicy.shouldTrigger(
             preferences: preferences,
             hoverEnabled: appState?.hoverScanningEnabled == true,
@@ -555,6 +556,7 @@ enum LookupHighlightVisibilityPolicy {
         requiresStablePointer: Bool
     ) -> Bool {
         guard !isScanning, let plan = CapturePlan.around(position) else { return false }
+        guard appState?.canDetect == true else { return false }
         guard CGPreflightScreenCaptureAccess() else { appState?.screenRecordingGranted = false; return false }
         let generation = scanGeneration
         let startedDirectGeneration = directGeneration
@@ -760,7 +762,7 @@ enum LookupHighlightVisibilityPolicy {
         guard let number = currentNumber else {
             overlay.setInput("Type a ticket number first"); return
         }
-        let projects = ProjectDescriptor.known
+        let projects = ProjectDescriptor.selectable
         let currentIndex = projects.firstIndex(where: { $0.key == currentProject }) ?? 0
         let next = projects[(currentIndex + direction + projects.count) % projects.count]
         currentProject = next.key

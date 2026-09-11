@@ -167,7 +167,7 @@ private func chip(_ label: String, x: CGFloat, y: CGFloat) -> CGFloat {
     return width
 }
 
-private let scanField = image("docs/screenshots/glint-scan-field.png")
+private let scanField = image("docs/screenshots/nuncid-scan-field.png")
 private let icon = image("Sources/Nuncid/Resources/Brand/nuncid-app-icon-1024.png")
 private let card = image("docs/screenshots/pinned-card-\(releaseVersion).png")
 private let scanning = image("docs/screenshots/settings-scanning-\(releaseVersion).png")

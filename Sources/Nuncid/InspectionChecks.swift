@@ -28,7 +28,7 @@ enum InspectionChecks {
 
         let name = "at.markusbarta.nuncid.inspection-tests.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: name)!
-        defer { defaults.removePersistentDomain(forName: name) }
+        defer { defaults.removePersistentDomain(forName: name); defaults.synchronize() }
         defaults.set("keep", forKey: "presentation.textSize")
         defaults.set("keep", forKey: "inspectHotKey")
         check(InspectionZoom.load(defaults: defaults).percent == 100, "zoom defaults to baseline")

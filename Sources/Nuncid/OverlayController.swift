@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import Combine
 
 enum OverlayMetrics {
     static let pinnedReservedChromeHeight: CGFloat = 104
@@ -822,6 +823,8 @@ struct AppearanceCardPreview: View {
 }
 
 @MainActor private final class OverlayViewState: ObservableObject {
+    @Published var permissionRequired = false
+    var permissionFlow: ScreenRecordingPermissionFlow?
     @Published var lines: [TicketLine] = []
     @Published var selectedIndex = 0
     @Published var navigationGeneration = 0
@@ -848,6 +851,9 @@ private struct OverlayRootView: View {
 
     var body: some View {
         GeometryReader { proxy in
+            if state.permissionRequired, let flow = state.permissionFlow {
+                PermissionGuideView(flow: flow, onClose: onClose)
+            } else {
             OverlayContent(
                 lines: state.lines,
                 selectedIndex: state.selectedIndex,
@@ -870,6 +876,7 @@ private struct OverlayRootView: View {
                 baselineSize: state.baselineSize,
                 onZoom: onZoom
             )
+            }
         }
     }
 }
@@ -887,6 +894,21 @@ private struct OverlayRootView: View {
 
     private let panel: FocusablePanel
     private let viewState = OverlayViewState()
+    private var permissionObserver: AnyCancellable?
+    private var requiresPermissionGuide: Bool { viewState.permissionFlow?.needsGuidance == true }
+
+    func configurePermissionGuide(_ flow: ScreenRecordingPermissionFlow) {
+        viewState.permissionFlow = flow
+        viewState.permissionRequired = flow.needsGuidance
+        permissionObserver = flow.objectWillChange.sink { [weak self] _ in
+            DispatchQueue.main.async {
+                guard let self else { return }
+                self.viewState.permissionRequired = flow.needsGuidance
+                if flow.needsGuidance { self.setScrollOpacity(1, animated: false) }
+                if self.panel.isVisible { self.renderInspection() }
+            }
+        }
+    }
     private var displayedLines: [TicketLine] = []
     private var selectedIndex = 0
     private var navigationGeneration = 0
@@ -920,6 +942,7 @@ private struct OverlayRootView: View {
     var containsPointer: Bool { panel.isVisible && panel.frame.contains(NSEvent.mouseLocation) }
 
 #if DEBUG
+    var debugPermissionGuideVisible: Bool { panel.isVisible && viewState.permissionRequired }
     var debugOpacity: CGFloat { panel.alphaValue }
     var debugScrollPresentation: [String: Any] {
         ["target": requestedScrollOpacity, "pointerInside": containsPointer,
@@ -1144,7 +1167,7 @@ private struct OverlayRootView: View {
     }
 
     func windowDidMove(_ notification: Notification) {
-        guard !isPositioningProgrammatically else { return }
+        guard !isPositioningProgrammatically, !requiresPermissionGuide else { return }
         onExternalContentMayMove?()
         if isSticky { savePinnedOrigin() }
     }
@@ -1160,7 +1183,7 @@ private struct OverlayRootView: View {
     }
 
     func windowDidEndLiveResize(_ notification: Notification) {
-        guard !isPositioningProgrammatically else { return }
+        guard !isPositioningProgrammatically, !requiresPermissionGuide else { return }
         let baseline = zoom.baseline(afterResize: panel.frame.size)
         presentationPreferences.width = .custom
         presentationPreferences.customWidth = baseline.width
@@ -1214,6 +1237,10 @@ private struct OverlayRootView: View {
 
     private func handle(_ event: NSEvent) -> NSEvent? {
         guard panel.isVisible else { return event }
+        if requiresPermissionGuide {
+            if event.window === panel, event.type == .keyDown, event.keyCode == 53 { onClose?(); return nil }
+            return event
+        }
         if event.type == .scrollWheel {
             let pointerInside = event.window === panel || panel.frame.contains(NSEvent.mouseLocation)
             if !pointerInside { noteExternalScroll() }
@@ -1250,7 +1277,7 @@ private struct OverlayRootView: View {
     }
 
     private func handleGlobalScroll(_ event: NSEvent) {
-        guard panel.isVisible,
+        guard panel.isVisible, !requiresPermissionGuide,
               !panel.frame.contains(NSEvent.mouseLocation) else { return }
         noteExternalScroll()
         if event.modifierFlags.contains(interactionPreferences.scrollModifier.eventFlag) {
@@ -1339,7 +1366,7 @@ private struct OverlayRootView: View {
         let shouldRemainFocused = panel.isKeyWindow
         guard let targetScreen = panel.isVisible ? (panel.screen ?? screen(containing: anchorMouse)) : screen(containing: anchorMouse) else { return }
         let visible = targetScreen.visibleFrame
-        let size = InspectionZoom.bounded(zoom.requestedSize(baseline: requestedBaseline), visible: visible)
+        let size = InspectionZoom.bounded(requiresPermissionGuide ? CGSize(width: 580, height: 500) : zoom.requestedSize(baseline: requestedBaseline), visible: visible)
         var origin = panel.frame.origin
         if useSavedPosition { origin = savedOrigin(for: targetScreen, size: size) }
         else if !panel.isVisible {
@@ -1349,6 +1376,7 @@ private struct OverlayRootView: View {
         }
         origin = PanelPlacement.clamped(origin: origin, size: size, visibleFrame: visible)
         isPositioningProgrammatically = true
+        panel.level = requiresPermissionGuide ? .normal : .statusBar
         updatePanelSizeLimits(for: targetScreen)
         syncViewState()
         panel.setFrame(CGRect(origin: origin, size: size), display: true)
@@ -1357,6 +1385,7 @@ private struct OverlayRootView: View {
     }
 
     private func syncViewState() {
+        viewState.permissionRequired = requiresPermissionGuide
         viewState.lines = displayedLines
         viewState.selectedIndex = selectedIndex
         viewState.navigationGeneration = navigationGeneration
