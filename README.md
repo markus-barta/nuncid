@@ -1,9 +1,9 @@
 <p align="center">
-  <img src="docs/screenshots/hero-260911103102.0.0.png" alt="Nuncid — point at a ticket and know what matters" width="100%">
+  <img src="docs/screenshots/hero-260911103820.0.0.png" alt="Nuncid — point at a ticket and know what matters" width="100%">
 </p>
 
 <p align="center">
-  <a href="https://github.com/markus-barta/nuncid/releases/latest"><img src="https://img.shields.io/badge/release-260911103102.0.0-0A84FF?style=flat-square" alt="Latest release 260911103102.0.0"></a>
+  <a href="https://github.com/markus-barta/nuncid/releases/latest"><img src="https://img.shields.io/badge/release-260911103820.0.0-0A84FF?style=flat-square" alt="Latest release 260911103820.0.0"></a>
   <img src="https://img.shields.io/badge/macOS-13%2B-111827?style=flat-square&logo=apple" alt="macOS 13 or newer">
   <img src="https://img.shields.io/badge/Swift-5.10-F05138?style=flat-square&logo=swift&logoColor=white" alt="Swift 5.10">
   <img src="https://img.shields.io/badge/OCR-local-22C55E?style=flat-square" alt="Local OCR">
@@ -29,7 +29,7 @@
 Click Nuncid or use the activation shortcut to toggle **detection ON/OFF**. ON immediately opens an inspection window and keeps it visible. Apple Vision discovers ticket references progressively outward from the pointer over the invoked display. Nearby candidates resolve first through your existing Paimos and GitHub sessions; hovering prioritizes a pending ID and opens its cached card. OFF stops automatic discovery and reads.
 
 <p align="center">
-  <img src="docs/screenshots/workflow-260911103102.0.0.png" alt="Nuncid keeps the current ticket fixed between previous and next results" width="100%">
+  <img src="docs/screenshots/workflow-260911103820.0.0.png" alt="Nuncid keeps the current ticket fixed between previous and next results" width="100%">
 </p>
 
 | Invoke anywhere | Keep context nearby | Navigate without friction |
@@ -53,7 +53,7 @@ Pinned and unpinned windows have exactly the same header and controls. Close is 
 The active source remains emphasized for as long as its card is visible. All candidates are marked during exploration—there is no pinned-only visibility switch. A pending selection shows “Checking…” rather than inventing ticket content.
 
 <p align="center">
-  <img src="docs/screenshots/lookup-highlight-260911103102.0.0.png" alt="Three badge-free detection styles: gray dashes, dark-gray diagonal, and green fill" width="100%">
+  <img src="docs/screenshots/lookup-highlight-260911103820.0.0.png" alt="Three badge-free detection styles: gray dashes, dark-gray diagonal, and green fill" width="100%">
 </p>
 
 Markers ignore mouse input, do not animate, and remain excluded from screen capture. Source scrolling or Space changes invalidate stale coordinates immediately. After a short settling delay, Nuncid rediscovers visible IDs and reanchors their markers while keeping the card and cached results. **Refresh when source window changes** in Detection settings is off by default, including after upgrades: changing terminal/TUI window titles no longer repeatedly restart discovery. Enable it to rescan on source-window changes, or toggle detection off and on for a fresh scan. Off-screen IDs lose only their outline after refresh.
@@ -67,7 +67,7 @@ Detection settings expose the shortcut, **hover delay (default 100 ms, 0–500 m
 **Detection Frames** settings configure each state's outline color/opacity and fill color/opacity. Strike-through is available **only for no-match results**, with its own on/off toggle, color, and opacity. Pending/checking and verified matches never have a diagonal, even if older saved settings enabled one. Changes update visible markers immediately—without OCR or tracker requests. A local preview shows normal/selected frames; reset one state or all marker styles without resetting other preferences.
 
 <p align="center">
-  <img src="docs/screenshots/settings-markers-260911103102.0.0.png" alt="Detection frame colors, opacity, and independent diagonal strike-through settings" width="100%">
+  <img src="docs/screenshots/settings-markers-260911103820.0.0.png" alt="Detection frame colors, opacity, and independent diagonal strike-through settings" width="100%">
 </p>
 
 | Idle | Exploring | Ticket found |
@@ -75,14 +75,14 @@ Detection settings expose the shortcut, **hover delay (default 100 ms, 0–500 m
 | <img src="docs/screenshots/menu-hover-off-0.3.2.png" alt="Dimmed Nuncid menu bar icon: hover is off" width="40"> | <img src="docs/screenshots/menu-hover-on-0.3.2.png" alt="Filled viewfinder menu bar icon: hover is on" width="40"> | <img src="docs/screenshots/menu-ticket-found-0.3.2.png" alt="Checkmark menu bar icon: ticket found" width="40"> |
 
 <p align="center">
-  <img src="docs/screenshots/settings-showcase-260911103102.0.0.png" alt="Nuncid activation and spatial card appearance settings" width="100%">
+  <img src="docs/screenshots/settings-showcase-260911103820.0.0.png" alt="Nuncid activation and spatial card appearance settings" width="100%">
 </p>
 
 Nuncid can show zero to six neighboring destinations and offers four text sizes, three presets plus a remembered Custom size, three content densities, and system or solid surfaces. These appearance settings define the **100% baseline**. The header’s **− / percentage / +** controls independently remember **30–300% zoom**, in 10-percentage-point steps; click the percentage to reset to 100%. Content, icons and spacing magnify together. The header stays at native size so controls remain usable at 30%. The window cannot exceed its current display’s usable area; oversized content scrolls horizontally and vertically using native macOS behavior. Dragging/resizing and changing displays do not bake zoom into the saved baseline.
 
 <p align="center">
-  <img src="docs/screenshots/inspection-zoom30-260911103102.0.0.png" alt="30% magnified content with a comfortably usable native-size header" width="28%">
-  <img src="docs/screenshots/inspection-zoom300-260911103102.0.0.png" alt="300% content magnification constrained to the screen, with native scrolling" width="68%">
+  <img src="docs/screenshots/inspection-zoom30-260911103820.0.0.png" alt="30% magnified content with a comfortably usable native-size header" width="28%">
+  <img src="docs/screenshots/inspection-zoom300-260911103820.0.0.png" alt="300% content magnification constrained to the screen, with native scrolling" width="68%">
 </p>
 
 ## What changed—and why it feels better
@@ -90,7 +90,7 @@ Nuncid can show zero to six neighboring destinations and offers four text sizes,
 The app’s **Version History** explains each release in concise, positive human language. Open it from the menu, About window, or by clicking the version in Settings; your running version is always highlighted.
 
 <p align="center">
-  <img src="docs/screenshots/version-history-260911103102.0.0.png" alt="Nuncid Version History with the current release highlighted and benefit-led notes" width="100%">
+  <img src="docs/screenshots/version-history-260911103820.0.0.png" alt="Nuncid Version History with the current release highlighted and benefit-led notes" width="100%">
 </p>
 
 ## Smarter resolution, fewer wrong guesses
@@ -118,7 +118,7 @@ revisits may refresh them, without background polling. Run/PR/repository cache
 identities are distinct. Pasted scoped PR/run commands and URLs use the same classification rules; pictured commands are never executed.
 
 <p align="center">
-  <img src="docs/screenshots/workflow-run-260911103102.0.0.png" alt="GitHub workflow run summary with status, branch, commit, duration and link" width="70%">
+  <img src="docs/screenshots/workflow-run-260911103820.0.0.png" alt="GitHub workflow run summary with status, branch, commit, duration and link" width="70%">
 </p>
 
 Automatic discovery no longer uses global project history to turn unrelated numbers into tickets. Intentional pinned number/project entry remains available separately, and Nuncid never fabricates a “maybe” result.
@@ -315,7 +315,8 @@ The app now uses the macOS identity `at.markusbarta.nuncid`. On first launch it
 backs up and imports the previous packaged app’s preferences, preserving your
 shortcuts, pinned positions, appearance, zoom and detection settings. macOS may
 require a new Screen Recording grant; use **Grant Screen Recording…** in the
-menu. See the [migration and rollback record](docs/nuncid-rename-2026-08-30.md).
+menu. Settings open only on request through one populated window; no empty
+settings window is restored at startup. See the [migration and rollback record](docs/nuncid-rename-2026-08-30.md).
 
 The capture script opens DEBUG-only visual probes long enough to save the current pinned card, Scanning, Appearance, and light/dark Version History. The compositor reads `VERSION` and rebuilds the README hero, feature gallery, and social preview from those same-version captures plus the checked-in scan-field artwork. Historical GLINT captures and the [0.3.0 visual comparison](docs/compare-0.3.0.html) remain unchanged so the release record stays truthful. The [rename decision and migration record](docs/nuncid-rename-2026-08-30.md) documents the collision screen and compatibility choices.
 

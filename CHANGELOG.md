@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+## [260911103820.0.0] - 2026-09-11
+
+- Open only the populated Nuncid settings window (NUNCID-78)
+
 ## [260911103102.0.0] - 2026-09-11
 
 - Complete the Nuncid identity and preserve existing settings (NUNCID-78)

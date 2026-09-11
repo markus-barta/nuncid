@@ -22,6 +22,19 @@ struct ReleaseNote: Identifiable, Equatable {
 enum ReleaseHistory {
     static let notes: [ReleaseNote] = [
         ReleaseNote(
+            version: "260911103820.0.0",
+            isoDate: "2026-09-11",
+            date: "11 September 2026",
+            theme: "One settings window",
+            headline: "Settings, with everything in place.",
+            intro: "Nuncid opens its complete settings window when you ask, without an extra empty window appearing at startup.",
+            items: [
+                ReleaseNoteItem(label: "A quiet start", detail: "The menu-bar app starts without restoring an unused settings window. Your migrated preferences stay intact."),
+                ReleaseNoteItem(label: "Open and reopen", detail: "The menu and keyboard shortcut use the same populated settings window, including after you close it.")
+            ],
+            versionScheme: .calendarV2
+        ),
+        ReleaseNote(
             version: "260911103102.0.0",
             isoDate: "2026-09-11",
             date: "11 September 2026",
