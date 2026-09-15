@@ -5,7 +5,7 @@ from pathlib import Path
 import subprocess
 
 ROOT = Path(__file__).resolve().parent.parent
-REVISION = "a45fe06250ff5ca3ae5b31d26b4cd16c982ce402"
+REVISION = "acbb6194b60b496be2a5928cd616443e9d8d7baa"
 SIZE = 863
 SHA256 = "2fdc8b4f6fcaf71cf3a7c8333e63c0f61bae32ebb8bd334eef0e3f67c59725e0"
 COPY = "Sources/Nuncid/Resources/calendar-version-display.json"
