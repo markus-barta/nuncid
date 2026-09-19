@@ -41,15 +41,14 @@ def verify_signature(tool, kind, path, key, signature=None):
     subprocess.run(args, check=True)
 
 
-def sign(path):
+def sign(path, private_key):
     # Never put key material in argv, files, logs or exceptions. CI supplies it
-    # only to this step from the repository's dedicated Actions secret.
-    key = os.environ.get("NUNCID_SPARKLE_PRIVATE_KEY")
-    if not key:
+    # only to this step from the protected release-signing environment secret.
+    if not private_key:
         raise ValueError("NUNCID_SPARKLE_PRIVATE_KEY is required to sign this release")
     tool = ROOT / ".build/artifacts/sparkle/Sparkle/bin/sign_update"
     result = subprocess.run([str(tool), "--ed-key-file", "-", "-p", str(path)],
-                            input=key, text=True, capture_output=True)
+                            input=private_key, text=True, capture_output=True)
     if result.returncode:
         raise ValueError("Sparkle signing failed; diagnostic output withheld to protect key material")
     return result.stdout.strip()
@@ -69,14 +68,14 @@ def archive_info(record):
     return archive, plist
 
 
-def create():
+def create(private_key):
     settings = config()
     record = POLICY.load()
     archive, plist = archive_info(record)
     feed = ROOT / "dist/appcast.xml"
     if feed.exists():
         raise ValueError("Appcast already exists; preserve the immutable candidate")
-    signature = sign(archive)
+    signature = sign(archive, private_key)
     if len(base64.b64decode(signature, validate=True)) != 64:
         raise ValueError("Invalid archive signature")
     rss = ET.Element("rss", version="2.0")
@@ -101,7 +100,7 @@ def create():
         f"{{{SPARKLE}}}edSignature": signature})
     with feed.open("xb") as output:
         output.write(ET.tostring(rss, encoding="utf-8", xml_declaration=True) + b"\n")
-    sign(feed)
+    sign(feed, private_key)
     verify(settings)
 
 
@@ -129,7 +128,9 @@ def verify(settings=None):
 if __name__ == "__main__":
     try:
         if sys.argv[1:] == ["create"]:
-            create()
+            # Remove it before starting any child process. Only sign_update
+            # receives the key, through stdin; verification tools never inherit it.
+            create(os.environ.pop("NUNCID_SPARKLE_PRIVATE_KEY", None))
         elif sys.argv[1:] == ["verify"]:
             verify()
         elif sys.argv[1:] == ["config"]:

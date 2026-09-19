@@ -45,13 +45,13 @@ jobs:
       - name: Package once without signing-secret access
         id: package
         run: ./scripts/package-release.sh --prepare
-      - name: Sign exact archive and seal release manifest
+      - name: Sign exact archive and feed
         id: sign
         env:
           NUNCID_SPARKLE_PRIVATE_KEY: ${{ secrets.NUNCID_SPARKLE_PRIVATE_KEY }}
-        run: |
-          python3 scripts/update-feed.py create
-          python3 scripts/release-policy.py manifest
+        run: python3 scripts/update-feed.py create
+      - name: Seal release manifest without signing-secret access
+        run: python3 scripts/release-policy.py manifest
       - name: Verify exact candidate with the public key
         id: verify
         run: ./scripts/verify-release.sh

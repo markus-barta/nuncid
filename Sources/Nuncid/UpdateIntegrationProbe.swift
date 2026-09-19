@@ -36,7 +36,8 @@ import Combine
                     driver.performAction()
                 }
             } else if state == .failed {
-                let correctRejection = expectsFailure && driver.lastFailureWasSignatureValidation
+                let correctRejection = expectsFailure && driver.lastFailureWasValidation
+                fputs("Update rejection codes: \(driver.lastFailureCodes.joined(separator: ", "))\n", stderr)
                 record(correctRejection ? "rejected;installed-app-preserved" : "unexpected-failure")
                 Darwin.exit(correctRejection ? 0 : 1)
             }

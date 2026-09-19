@@ -68,8 +68,10 @@ import Sparkle
         offlineDriver.fail(NSError(domain: SUSparkleErrorDomain, code: Int(SUError.appcastError.rawValue)))
         expect(offlineDriver.state == .ready && offlineDriver.canAct, "feed failure preserves verified staged update")
         offlineDriver.fail(NSError(domain: SUSparkleErrorDomain, code: Int(SUError.signatureError.rawValue)))
-        expect(offlineDriver.state == .failed && !offlineDriver.canAct && offlineDriver.lastFailureWasSignatureValidation,
+        expect(offlineDriver.state == .failed && !offlineDriver.canAct && offlineDriver.lastFailureWasValidation,
                "signature rejection invalidates readiness and identifies validation failure")
+        offlineDriver.fail(NSError(domain: SUSparkleErrorDomain, code: Int(SUError.validationError.rawValue)))
+        expect(offlineDriver.lastFailureWasValidation, "Sparkle 2.10 validation error is recognized")
         return failures
     }
 }

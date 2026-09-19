@@ -12,6 +12,10 @@ signing_identity=${NUNCID_SIGNING_IDENTITY:--}
   print -u2 'Use the protected release-signing workflow. --prepare creates the archive without accessing update-signing keys.'
   exit 1
 }
+[[ -z "${NUNCID_SPARKLE_PRIVATE_KEY:-}" ]] || {
+  print -u2 'Do not supply update-signing keys to the packaging step.'
+  exit 1
+}
 trap 'rm -f "$temporary_archive"' EXIT
 python3 "$repo_dir/scripts/release-policy.py" validate >/dev/null
 python3 "$repo_dir/scripts/update-feed.py" config

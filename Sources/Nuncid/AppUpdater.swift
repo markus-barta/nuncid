@@ -81,7 +81,8 @@ enum SignedUpdatePolicy {
     private var installReply: ((SPUUserUpdateChoice) -> Void)?
     private var restartRequested = false
     private var userRequestedCheck = false
-    private(set) var lastFailureWasSignatureValidation = false
+    private(set) var lastFailureWasValidation = false
+    private(set) var lastFailureCodes: [String] = []
 #if DEBUG
     private var integrationProbe = false
     private var settingsPreview = false
@@ -274,11 +275,16 @@ enum SignedUpdatePolicy {
             return
         }
         var cause: NSError? = failure
-        lastFailureWasSignatureValidation = false
+        lastFailureWasValidation = false
+        lastFailureCodes = []
         for _ in 0..<8 {
             guard let current = cause else { break }
-            if current.domain == SUSparkleErrorDomain && current.code == SUError.signatureError.rawValue {
-                lastFailureWasSignatureValidation = true
+            lastFailureCodes.append("\(current.domain):\(current.code)")
+            // Sparkle 2.10's SUSignatureVerifier reports SUValidationError;
+            // older framework paths can still report SUSignatureError.
+            if current.domain == SUSparkleErrorDomain &&
+                [Int(SUError.signatureError.rawValue), Int(SUError.validationError.rawValue)].contains(current.code) {
+                lastFailureWasValidation = true
             }
             cause = current.userInfo[NSUnderlyingErrorKey] as? NSError
         }
