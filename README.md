@@ -26,7 +26,7 @@
 
 ## Look once. Keep moving.
 
-Click Nuncid or use the activation shortcut to toggle **detection ON/OFF**. ON immediately opens an inspection window and keeps it visible. Apple Vision discovers ticket references progressively outward from the pointer over the invoked display. Nearby candidates resolve first through your existing Paimos and GitHub sessions; hovering prioritizes a pending ID and opens its cached card. OFF stops automatic discovery and reads.
+Click Nuncid or use the activation shortcut to toggle **detection ON/OFF**. ON immediately opens an inspection window and keeps it visible. Apple Vision discovers ticket references progressively outward from the pointer, then scans the other awake displays one by one. Each display keeps its own correctly positioned markers; references to the same ticket share a lookup. Nearby candidates resolve first through your existing Paimos and GitHub sessions; hovering prioritizes a pending ID and opens its cached card. OFF stops automatic discovery and reads.
 
 <p align="center">
   <img src="docs/screenshots/workflow-260919123400.0.0.png" alt="Nuncid keeps the current ticket fixed between previous and next results" width="100%">
@@ -112,6 +112,7 @@ Open **Settings → Updates** to enable or disable **Download updates automatica
 The right-click menu shows **Downloading Update…**, then **Restart to Update** only
 once Sparkle has verified and staged the update. Click it to apply and relaunch;
 Nuncid never restarts automatically. A ready update can also install when you quit.
+While an update is ready, a small up-arrow appears at the top right of the menu-bar icon.
 Settings and shortcuts stay intact. Failed downloads can be retried from the same menu.
 
 The feed and archives require Ed25519 signatures. Update requests contact GitHub;

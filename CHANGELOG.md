@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- Scan awake displays one by one, starting at the pointer, with correctly anchored markers and shared ticket lookups across displays (NUNCID-102).
+- Show a small up-arrow on the menu-bar icon when a verified update is ready to install (NUNCID-103).
+
 ## [260919123400.0.0] - 2026-09-19
 
 - Download signed updates quietly, control automatic downloads in Settings, and choose **Restart to Update** from the right-click menu once an update is verified (NUNCID-98).

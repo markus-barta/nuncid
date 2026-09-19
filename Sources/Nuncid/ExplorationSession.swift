@@ -19,6 +19,17 @@ private struct ExplorationOccurrence {
     let confidence: Double
 }
 
+#if DEBUG
+private actor ExplorationLookupFixture {
+    private(set) var calls = 0
+    func lookup(_ spec: CandidateSpec) async -> TicketLine {
+        calls += 1
+        try? await Task.sleep(nanoseconds: 100_000_000)
+        return TicketLine(key: spec.cacheKey, state: "open", title: "Synthetic lifetime fixture", source: "ppm")
+    }
+}
+#endif
+
 private final class ExplorationMarkerPanel: NSPanel {
     override var canBecomeKey: Bool { false }
     override var canBecomeMain: Bool { false }
@@ -35,6 +46,25 @@ private final class ExplorationMarkerView: NSView {
             MarkerRenderer.draw(bounds: bounds, state: state, selected: selected,
                                 style: appearancePreferences[state])
         }
+    }
+}
+
+@MainActor private final class ExplorationMarkerSurface {
+    let panel: ExplorationMarkerPanel
+    let view = ExplorationMarkerView()
+
+    init() {
+        panel = ExplorationMarkerPanel(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+        panel.level = .floating
+        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        panel.isOpaque = false; panel.backgroundColor = .clear
+        panel.hasShadow = false; panel.ignoresMouseEvents = true
+        panel.hidesOnDeactivate = false; panel.sharingType = .none
+#if DEBUG
+        if CommandLine.arguments.contains("--capture-live") { panel.sharingType = .readOnly }
+#endif
+        view.appearancePreferences = MarkerAppearancePreferences.load()
+        panel.contentView = view
     }
 }
 
@@ -60,9 +90,9 @@ private final class ExplorationMarkerView: NSView {
     private var previousNavigationIDs: [String] = []
     private var workers: [String: Task<Void, Never>] = [:]
     private var discovery: Task<Void, Never>?
-    private var tiles: [CGRect] = []
+    private var tiles: [ExplorationTile] = []
     private var focus = CGPoint.zero
-    private var screenFrame = CGRect.zero
+    private var displays: [ExplorationDisplay] = []
     private var source: LookupSourceSnapshot?
     private var lastValidation = Date.distantPast
     private var refreshAfter: Date?
@@ -74,30 +104,20 @@ private final class ExplorationMarkerView: NSView {
     private var workspaceObservers: [NSObjectProtocol] = []
     private var screenObserver: NSObjectProtocol?
     private var markerAppearanceObserver: NSObjectProtocol?
-    private let markerPanel: ExplorationMarkerPanel
-    private let markerView = ExplorationMarkerView()
+    private var markerSurfaces: [UInt32: ExplorationMarkerSurface] = [:]
 
     init(ocr: ScreenOCR, resolver: TicketResolver, planner: TicketEvidencePlanner, overlay: OverlayController) {
         self.ocr = ocr; self.resolver = resolver; self.planner = planner; self.overlay = overlay
-        markerPanel = ExplorationMarkerPanel(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
-        markerPanel.level = .floating
-        markerPanel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-        markerPanel.isOpaque = false; markerPanel.backgroundColor = .clear
-        markerPanel.hasShadow = false; markerPanel.ignoresMouseEvents = true
-        markerPanel.hidesOnDeactivate = false; markerPanel.sharingType = .none
-#if DEBUG
-        if CommandLine.arguments.contains("--capture-live") { markerPanel.sharingType = .readOnly }
-#endif
-        markerPanel.contentView = markerView
     }
 
     func start(at point: CGPoint) {
         Task { await TrackerDiscovery.shared.refresh() }
-        guard CGPreflightScreenCaptureAccess(), let screen = NSScreen.screens.first(where: { $0.frame.contains(point) }),
-              Self.displayIsAwake(screen) else { return }
+        let current = Self.currentDisplays()
+        guard CGPreflightScreenCaptureAccess(), let first = ExplorationPolicy.orderedDisplays(current, around: point).first else { return }
+        let point = current.contains(where: { $0.frame.contains(point) }) ? point : CGPoint(x: first.content.midX, y: first.content.midY)
         focus = point
-        if isActive, automaticEnabled, screen.frame == screenFrame, refreshAfter == nil {
-            tiles.sort { ExplorationPolicy.distance($0, to: point) < ExplorationPolicy.distance($1, to: point) }
+        if isActive, automaticEnabled, current == displays, refreshAfter == nil {
+            tiles = ExplorationPolicy.reprioritize(tiles, around: point)
             promoted = occurrence(at: point)?.jobID
             if let promoted { select(promoted, retry: false, near: point) }
             pump()
@@ -109,7 +129,6 @@ private final class ExplorationMarkerView: NSView {
             installObservers()
         }
         automaticEnabled = true
-        screenFrame = screen.frame
         refresh()
     }
 
@@ -143,7 +162,8 @@ private final class ExplorationMarkerView: NSView {
         jobs.removeAll(); occurrences.removeAll(); previousNavigationIDs.removeAll(); tiles.removeAll()
         refreshAfter = nil; selected = nil; selectedBounds = nil; promoted = nil
         hover = ExplorationHover()
-        markerPanel.orderOut(nil)
+        hideMarkers()
+        markerSurfaces.removeAll(); displays.removeAll()
         if let monitor { NSEvent.removeMonitor(monitor) }
         monitor = nil
         for observer in workspaceObservers { NSWorkspace.shared.notificationCenter.removeObserver(observer) }
@@ -156,7 +176,7 @@ private final class ExplorationMarkerView: NSView {
     }
 
     func externalContentMayMove() {
-        if screenFrame.contains(NSEvent.mouseLocation) { invalidateGeometry() }
+        if displays.contains(where: { $0.frame.contains(NSEvent.mouseLocation) }) { invalidateGeometry() }
     }
 
     func invalidateGeometry() {
@@ -165,17 +185,20 @@ private final class ExplorationMarkerView: NSView {
         discovery?.cancel(); discovery = nil
         if !occurrences.isEmpty { previousNavigationIDs = visibleJobIDs() }
         occurrences.removeAll(); tiles.removeAll(); hover = ExplorationHover()
-        markerPanel.orderOut(nil)
+        hideMarkers()
         refreshAfter = automaticEnabled ? Date().addingTimeInterval(ExplorationPolicy.settleDuration) : nil
     }
 
     func tick() {
         guard isActive else { return }
-        guard CGPreflightScreenCaptureAccess(),
-              let screen = NSScreen.screens.first(where: { $0.frame == screenFrame }),
-              Self.displayIsAwake(screen) else {
+        let currentDisplays = Self.currentDisplays()
+        guard CGPreflightScreenCaptureAccess(), !currentDisplays.isEmpty else {
             if automaticEnabled || !occurrences.isEmpty { suspend(clearAnchors: true); onPauseRequested?() }
             return
+        }
+        if currentDisplays != displays {
+            displays = currentDisplays
+            invalidateGeometry()
         }
         let now = Date()
         let preferences = ExplorationPreferences.load()
@@ -238,6 +261,7 @@ private final class ExplorationMarkerView: NSView {
 
     private func select(_ id: String, retry: Bool, near point: CGPoint) {
         guard var job = jobs[id] else { return }
+        focus = point
         onSelectionClaimed?()
         presentationHeld = false; presentationGeneration += 1
         selected = id; promoted = id
@@ -340,13 +364,17 @@ private final class ExplorationMarkerView: NSView {
 
     private func refresh() {
         guard isActive, automaticEnabled else { return }
-        guard let screen = NSScreen.screens.first(where: { $0.frame == screenFrame }) else {
+        displays = Self.currentDisplays()
+        guard !displays.isEmpty else {
             suspend(clearAnchors: true); onPauseRequested?(); return
         }
         geometryGeneration += 1
         discovery?.cancel()
         if !occurrences.isEmpty { previousNavigationIDs = visibleJobIDs() }
-        occurrences.removeAll(); markerPanel.orderOut(nil); refreshAfter = nil
+        occurrences.removeAll(); hideMarkers(); refreshAfter = nil
+        for id in Array(markerSurfaces.keys) where !displays.contains(where: { $0.id == id }) {
+            markerSurfaces.removeValue(forKey: id)
+        }
         // Remove unreachable cache records to keep long sessions bounded. The
         // resolver still holds its normal TTL cache; active/selected jobs survive.
         if jobs.count >= ExplorationPolicy.maximumCandidates {
@@ -354,9 +382,7 @@ private final class ExplorationMarkerView: NSView {
         }
         let current = LookupSourceSnapshot.capture()
         if current?.processIdentifier != ProcessInfo.processInfo.processIdentifier, sourceIsOnDisplay(current) { source = current }
-        let content = ExplorationPolicy.contentFrame(screen: screen.frame, visible: screen.visibleFrame,
-            menuHeight: max(NSStatusBar.system.thickness, screen.safeAreaInsets.top))
-        tiles = ExplorationPolicy.tiles(in: content, around: focus)
+        tiles = ExplorationPolicy.scanTiles(on: displays, around: focus)
         let generation = geometryGeneration
         onStateChange?(true, selected.flatMap { jobs[$0]?.outcome } == .matched, "Exploring outward from pointer…")
         discovery = Task { [weak self] in
@@ -367,7 +393,8 @@ private final class ExplorationMarkerView: NSView {
             while !tiles.isEmpty {
                 guard !Task.isCancelled, isActive, generation == geometryGeneration else { return }
                 let tile = tiles.removeFirst()
-                guard let capture = CapturePlan.around(CGPoint(x: tile.midX, y: tile.midY), size: tile.size) else { continue }
+                guard let capture = tile.display.capturePlan(for: tile.bounds) else { continue }
+                let content = tile.display.content
                 let windows = ScreenContextGeometry.windows(for: capture)
                 let recognized = await ocr.recognizeFragments(plan: capture)
                 guard !Task.isCancelled, generation == geometryGeneration else { return }
@@ -408,7 +435,7 @@ private final class ExplorationMarkerView: NSView {
                             // complete --repo value; never guess a cropped scope.
                             let wider = CGRect(x: anchor.bounds.midX - 500, y: anchor.bounds.midY - 120,
                                                width: 1_000, height: 240).intersection(content)
-                            if wider.width > 20, wider.height > 20 { tiles.insert(wider, at: 0) }
+                            if wider.width > 20, wider.height > 20 { tiles.insert(ExplorationTile(display: tile.display, bounds: wider), at: 0) }
                         }
                     }
                     let id = reference.spec?.cacheKey ?? "unresolved:\(reference.category.rawValue):\(anchor.id)"
@@ -459,27 +486,49 @@ private final class ExplorationMarkerView: NSView {
         return CGDisplayIsActive(id) != 0 && CGDisplayIsAsleep(id) == 0
     }
 
+    private static func currentDisplays() -> [ExplorationDisplay] {
+        let available = NSScreen.screens.compactMap { screen -> ExplorationDisplay? in
+            guard displayIsAwake(screen),
+                  let number = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber else { return nil }
+            return ExplorationDisplay(id: number.uint32Value, frame: screen.frame,
+                content: ExplorationPolicy.contentFrame(screen: screen.frame, visible: screen.visibleFrame,
+                    menuHeight: max(NSStatusBar.system.thickness, screen.safeAreaInsets.top)),
+                quartzBounds: CGDisplayBounds(number.uint32Value))
+        }
+        return ExplorationPolicy.orderedDisplays(available, around: .zero).sorted { $0.id < $1.id }
+    }
+
     private func sourceIsOnDisplay(_ snapshot: LookupSourceSnapshot?) -> Bool {
-        guard let bounds = snapshot?.windowBounds, let plan = CapturePlan.around(focus) else { return false }
-        return plan.appKitRect(forQuartz: bounds).intersects(screenFrame)
+        guard let bounds = snapshot?.windowBounds else { return false }
+        return displays.contains { $0.quartzBounds.intersects(bounds) }
     }
 
     private func overOwnWindow(_ rect: CGRect) -> Bool {
-        NSApp.windows.contains { $0 !== markerPanel && !$0.ignoresMouseEvents && $0.isVisible && $0.frame.intersects(rect) }
+        NSApp.windows.contains { !$0.ignoresMouseEvents && $0.isVisible && $0.frame.intersects(rect) }
+    }
+
+    private func hideMarkers() {
+        for surface in markerSurfaces.values { surface.panel.orderOut(nil) }
     }
 
     private func renderMarkers() {
-        guard isActive, refreshAfter == nil, !occurrences.isEmpty else { markerPanel.orderOut(nil); return }
-        markerPanel.setFrame(screenFrame, display: false)
+        guard isActive, refreshAfter == nil, !occurrences.isEmpty else { hideMarkers(); return }
         let selectedOccurrence = occurrences.filter { $0.jobID == selected }.min {
             ExplorationPolicy.distance($0.anchor.bounds, to: selectedBounds.map { CGPoint(x: $0.midX, y: $0.midY) } ?? focus) < ExplorationPolicy.distance($1.anchor.bounds, to: selectedBounds.map { CGPoint(x: $0.midX, y: $0.midY) } ?? focus)
         }
-        markerView.markers = occurrences.compactMap { occurrence in
-            guard let job = jobs[occurrence.jobID], !overOwnWindow(occurrence.anchor.bounds),
-                  automaticEnabled || (overlay.isVisible && occurrence.anchor.id == selectedOccurrence?.anchor.id) else { return nil }
-            return (occurrence.anchor.bounds.offsetBy(dx: -screenFrame.minX, dy: -screenFrame.minY), job.outcome, occurrence.anchor.id == selectedOccurrence?.anchor.id && overlay.isVisible)
+        for display in displays {
+            let surface = markerSurfaces[display.id] ?? ExplorationMarkerSurface()
+            markerSurfaces[display.id] = surface
+            surface.panel.setFrame(display.frame, display: false)
+            surface.view.markers = occurrences.compactMap { occurrence in
+                guard let job = jobs[occurrence.jobID], !overOwnWindow(occurrence.anchor.bounds),
+                      let localBounds = ExplorationPolicy.localMarker(occurrence.anchor.bounds, on: display.frame),
+                      automaticEnabled || (overlay.isVisible && occurrence.anchor.id == selectedOccurrence?.anchor.id) else { return nil }
+                return (localBounds, job.outcome, occurrence.anchor.id == selectedOccurrence?.anchor.id && overlay.isVisible)
+            }
+            if surface.view.markers.isEmpty { surface.panel.orderOut(nil) }
+            else { surface.panel.orderFrontRegardless() }
         }
-        markerPanel.orderFrontRegardless()
     }
 
 #if DEBUG
@@ -488,26 +537,43 @@ private final class ExplorationMarkerView: NSView {
     static func checkInspectionLifetimes() async -> [String] {
         var failures: [String] = []
         let overlay = OverlayController(allowsCapture: true)
-        let resolver = TicketResolver(lookupForTesting: { spec in
-            try? await Task.sleep(nanoseconds: 100_000_000)
-            return TicketLine(key: spec.cacheKey, state: "open", title: "Synthetic lifetime fixture", source: "ppm")
-        })
+        let fixture = ExplorationLookupFixture()
+        let resolver = TicketResolver(lookupForTesting: { spec in await fixture.lookup(spec) })
         let session = ExplorationSession(ocr: ScreenOCR(), resolver: resolver, planner: TicketEvidencePlanner(), overlay: overlay)
         session.isActive = true; session.automaticEnabled = true
         let frame = NuncidWindowPlacement.probeScreen?.frame ?? NSScreen.main?.frame ?? CGRect(x: 0, y: 0, width: 1000, height: 800)
-        session.screenFrame = frame
+        session.displays = [ExplorationDisplay(id: 1, frame: frame, content: frame, quartzBounds: frame)]
         session.focus = CGPoint(x: frame.minX + 100, y: frame.maxY - 200)
         for index in 1...2 {
             let id = "fixture-\(index)"
             session.jobs[id] = ExplorationJob(id: id, literal: id, primary: [.issue(tracker: .ppm, key: "NUNCID-\(index)")], fallback: [], contextReason: "Synthetic fixture")
             session.occurrences.append(ExplorationOccurrence(jobID: id, anchor: ScanFeedbackAnchor(literal: id, bounds: CGRect(x: session.focus.x, y: session.focus.y + CGFloat(index * 30), width: 80, height: 20)), confidence: 1))
         }
+        let secondFrame = frame.offsetBy(dx: -frame.width, dy: -100)
+        session.displays.append(ExplorationDisplay(id: 2, frame: secondFrame, content: secondFrame, quartzBounds: secondFrame))
+        let secondBounds = CGRect(x: secondFrame.minX + 100, y: secondFrame.minY + 100, width: 80, height: 20)
+        session.occurrences.append(ExplorationOccurrence(jobID: "fixture-1", anchor: ScanFeedbackAnchor(literal: "fixture-1", bounds: secondBounds), confidence: 1))
         session.selected = "fixture-1"
         session.pump(); session.holdPresentation()
         for _ in 0..<100 where !session.workers.isEmpty { try? await Task.sleep(nanoseconds: 20_000_000) }
         if overlay.isVisible || !session.automaticEnabled || session.jobs.values.contains(where: { $0.outcome != .matched }) {
             failures.append("editing must retain automatic discovery without late presentation")
         }
+        if await fixture.calls != 2 || session.markerSurfaces[1]?.view.markers.count != 2
+            || session.markerSurfaces[2]?.view.markers.count != 1 || session.navigationIDs().count != 2 {
+            failures.append("multiple displays retain separate markers but share duplicate ticket lookups and navigation")
+        }
+        let secondPoint = CGPoint(x: secondBounds.midX, y: secondBounds.midY)
+        if session.occurrence(at: secondPoint)?.jobID != "fixture-1" {
+            failures.append("hover locates the occurrence on the second display")
+        }
+        session.selectedBounds = secondBounds
+        session.select("fixture-1", retry: false, near: secondPoint)
+        if session.focus != secondPoint || session.markerSurfaces[2]?.view.markers.first?.2 != true
+            || session.markerSurfaces[1]?.view.markers.contains(where: { $0.2 }) != false {
+            failures.append("selection highlights only the hovered occurrence and retains its display focus")
+        }
+        session.holdPresentation(); overlay.hide()
         await resolver.clearCache()
         for id in session.jobs.keys { session.jobs[id]?.outcome = .queued }
         session.pump()
@@ -528,11 +594,12 @@ private final class ExplorationMarkerView: NSView {
         try? await Task.sleep(nanoseconds: 150_000_000)
         if session.selected != nil || !session.presentationHeld { failures.append("typing invalidates deferred navigation") }
         session.end(); overlay.hide()
-        if session.isActive || !session.jobs.isEmpty || !session.workers.isEmpty { failures.append("end releases session ownership") }
+        if session.isActive || !session.jobs.isEmpty || !session.workers.isEmpty || !session.markerSurfaces.isEmpty { failures.append("end releases session ownership and every display marker surface") }
 
         // Replay a live TUI changing only its title on successive validation
         // ticks. Exercise the production invalidation path, not just defaults.
         session.isActive = true; session.automaticEnabled = true
+        session.displays = [ExplorationDisplay(id: 1, frame: frame, content: frame, quartzBounds: frame)]
         let sourceBounds = CGRect(x: 10, y: 20, width: 900, height: 700)
         let originalSource = LookupSourceSnapshot(processIdentifier: -1, windowIdentifier: 7, windowBounds: sourceBounds, windowTitle: "TUI idle")
         session.source = originalSource
@@ -572,12 +639,11 @@ private final class ExplorationMarkerView: NSView {
 #endif
 
     private func installObservers() {
-        markerView.appearancePreferences = MarkerAppearancePreferences.load()
         markerAppearanceObserver = NotificationCenter.default.addObserver(forName: .nuncidMarkerAppearanceDidChange, object: nil, queue: .main) { [weak self] _ in
             Task { @MainActor in
                 guard let self, self.isActive else { return }
                 // Presentation-only: never invalidate OCR geometry or relaunch a lookup.
-                self.markerView.appearancePreferences = MarkerAppearancePreferences.load()
+                for surface in self.markerSurfaces.values { surface.view.appearancePreferences = MarkerAppearancePreferences.load() }
             }
         }
         // Passive event observation; never inspect keystroke text or swallow
@@ -590,7 +656,7 @@ private final class ExplorationMarkerView: NSView {
             if event.type == .scrollWheel, overlay.isVisible { return }
             // Carbon owns global Escape; the overlay owns local text entry.
             if event.type == .keyDown, event.keyCode == 53 { return }
-            guard screenFrame.contains(NSEvent.mouseLocation) else { return }
+            guard displays.contains(where: { $0.frame.contains(NSEvent.mouseLocation) }) else { return }
             invalidateGeometry()
         }
         for name in [NSWorkspace.activeSpaceDidChangeNotification, NSWorkspace.didWakeNotification] {
@@ -602,7 +668,7 @@ private final class ExplorationMarkerView: NSView {
             Task { @MainActor in self?.suspend(clearAnchors: true); self?.onPauseRequested?() }
         })
         screenObserver = NotificationCenter.default.addObserver(forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main) { [weak self] _ in
-            Task { @MainActor in self?.suspend(clearAnchors: true); self?.onPauseRequested?() }
+            Task { @MainActor in self?.invalidateGeometry() }
         }
     }
 }

@@ -41,13 +41,14 @@ capture_probe settings-trackers --settings-trackers-probe --settings-capture-pro
 capture_probe settings-updates --settings-updates-probe --settings-capture-probe
 capture_probe version-history --version-history-probe --version-history-capture-probe
 capture_probe version-history-dark --version-history-probe --version-history-dark-probe --version-history-capture-probe
+"$binary" --menu-update-icon-probe "$capture_dir/menu-update-ready-$version.png"
 
 # Synthetic rendering only: these probes never drag a file, open System Settings,
 # request a privacy grant, or restart the installed app.
 "$binary" --permission-capture-probe "$capture_dir/permission-guide-$version.png" "$capture_dir/Nuncid.app"
 "$binary" --permission-helper-probe --permission-capture-probe "$capture_dir/permission-helper-$version.png" "$capture_dir/Nuncid.app"
 
-for stem in pinned-card inspection-unpinned inspection-zoom30 inspection-zoom300 workflow-run lookup-highlight settings-scanning settings-markers settings-pinned settings-appearance settings-trackers settings-updates version-history version-history-dark permission-guide permission-helper; do
+for stem in pinned-card inspection-unpinned inspection-zoom30 inspection-zoom300 workflow-run lookup-highlight settings-scanning settings-markers settings-pinned settings-appearance settings-trackers settings-updates version-history version-history-dark permission-guide permission-helper menu-update-ready; do
   mv "$capture_dir/$stem-$version.png" "$screenshots/$stem-$version.png"
 done
 print -r -- "Captured Nuncid $version release visuals"
