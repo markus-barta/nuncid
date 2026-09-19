@@ -343,19 +343,21 @@ enum CanonicalReleaseChecker {
             },
         ])
         state.$activationPreferences
-            .combineLatest(state.$hoverScanningEnabled, state.$hoverMatchFound)
-            .sink { [weak self] preferences, hoverEnabled, matchFound in
+            .combineLatest(state.$hoverScanningEnabled, state.$hoverMatchFound, state.updater.$state)
+            .sink { [weak self] preferences, hoverEnabled, matchFound, updateState in
                 self?.refreshIcon(
                     mode: preferences.mode,
                     hoverEnabled: hoverEnabled,
-                    matchFound: matchFound
+                    matchFound: matchFound,
+                    updateReady: updateState == .ready
                 )
             }
             .store(in: &cancellables)
         refreshIcon(
             mode: state.activationPreferences.mode,
             hoverEnabled: state.hoverScanningEnabled,
-            matchFound: state.hoverMatchFound
+            matchFound: state.hoverMatchFound,
+            updateReady: state.updater.state == .ready
         )
     }
 
@@ -459,11 +461,12 @@ enum CanonicalReleaseChecker {
     private func refreshIcon(
         mode: HoverActivationMode,
         hoverEnabled: Bool,
-        matchFound: Bool
+        matchFound: Bool,
+        updateReady: Bool
     ) {
         guard let button = statusItem.button else { return }
         MenuBarIconPresentation.apply(to: button, mode: .toggleHover,
-                                      hoverEnabled: hoverEnabled, matchFound: matchFound)
+                                      hoverEnabled: hoverEnabled, matchFound: matchFound, updateReady: updateReady)
     }
 
 #if DEBUG

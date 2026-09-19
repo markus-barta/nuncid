@@ -435,6 +435,10 @@ import SwiftUI
     func applicationDidFinishLaunching(_ notification: Notification) {
         if CommandLine.arguments.contains("--self-test") { SelfTests.runAndExit() }
 #if DEBUG
+        if let index = CommandLine.arguments.firstIndex(of: "--menu-update-icon-probe"), CommandLine.arguments.indices.contains(index + 1) {
+            do { try MenuBarIconPresentation.capturePreview(to: URL(fileURLWithPath: CommandLine.arguments[index + 1])); Darwin.exit(0) }
+            catch { fputs("Menu update icon capture failed\n", stderr); Darwin.exit(1) }
+        }
         if UpdateIntegrationProbe.startIfRequested() { return }
         if CommandLine.arguments.contains("--menu-click-routing-probe") {
             MenuBarClickRoutingProbe.runAndExit()

@@ -269,6 +269,10 @@ private actor ResolverConcurrencyProbe {
     }
 
     private static func verifyExploration() {
+        let displayFailures = ExplorationDisplayChecks.run()
+        guard displayFailures.isEmpty else {
+            fputs("self-test failed: \(displayFailures.joined(separator: "; "))\n", stderr); exit(1)
+        }
         let states: [ExplorationOutcome] = [.matched, .queued, .resolving, .missed]
         guard states.filter({ $0.isNavigable(includeMisses: false) }) == [.matched, .queued, .resolving],
               states.allSatisfy({ $0.isNavigable(includeMisses: true) }),
@@ -442,6 +446,20 @@ private actor ResolverConcurrencyProbe {
                                   button.isEnabled,
                                   button.accessibilityLabel()?.hasPrefix("Nuncid,") == true else {
                                 fputs("self-test failed: native menu-bar template appearance\n", stderr); exit(1)
+                            }
+                            let ordinaryLabel = button.accessibilityLabel()
+                            MenuBarIconPresentation.apply(to: button, mode: mode,
+                                hoverEnabled: hover, matchFound: found, updateReady: true)
+                            guard button.image?.isTemplate == true, button.image?.size == NSSize(width: 20, height: 18),
+                                  button.contentTintColor == nil, button.appearance === appearance, button.isEnabled,
+                                  button.accessibilityLabel()?.hasPrefix((ordinaryLabel ?? "").trimmingCharacters(in: CharacterSet(charactersIn: "."))) == true,
+                                  button.accessibilityLabel()?.contains("update ready") == true,
+                                  button.toolTip?.contains("Restart to Update") == true else {
+                                fputs("self-test failed: update arrow retains native icon and access to install action\n", stderr); exit(1)
+                            }
+                            MenuBarIconPresentation.apply(to: button, mode: mode, hoverEnabled: hover, matchFound: found)
+                            guard button.accessibilityLabel() == ordinaryLabel, button.toolTip?.contains("Update ready") == false else {
+                                fputs("self-test failed: clearing readiness removes update badge accessibility state\n", stderr); exit(1)
                             }
                         }
                     }

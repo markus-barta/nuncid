@@ -68,6 +68,30 @@ struct ExplorationHover {
     }
 }
 
+/// A stable snapshot of one display's AppKit and Quartz coordinate spaces.
+/// Keeping this with each tile prevents a later pointer move from changing
+/// which display is captured or where recognized text is anchored.
+struct ExplorationDisplay: Equatable {
+    let id: UInt32
+    let frame: CGRect
+    let content: CGRect
+    let quartzBounds: CGRect
+
+    func capturePlan(for bounds: CGRect) -> CapturePlan? {
+        let bounded = bounds.intersection(content)
+        guard bounded.width > 20, bounded.height > 20 else { return nil }
+        let quartz = CGRect(x: quartzBounds.minX + bounded.minX - frame.minX,
+                            y: quartzBounds.minY + frame.maxY - bounded.maxY,
+                            width: bounded.width, height: bounded.height)
+        return CapturePlan(rect: quartz, displayBounds: quartzBounds, screenFrame: frame)
+    }
+}
+
+struct ExplorationTile: Equatable {
+    let display: ExplorationDisplay
+    let bounds: CGRect
+}
+
 enum ExplorationPolicy {
     static let settleDuration: TimeInterval = 0.3
     static let maximumCandidates = 512
@@ -75,6 +99,45 @@ enum ExplorationPolicy {
     static func contentFrame(screen: CGRect, visible: CGRect, menuHeight: CGFloat) -> CGRect {
         CGRect(x: screen.minX, y: screen.minY, width: screen.width,
                height: max(0, screen.height - max(0, menuHeight))).intersection(visible)
+    }
+
+    static func orderedDisplays(_ displays: [ExplorationDisplay], around point: CGPoint) -> [ExplorationDisplay] {
+        var unique: [ExplorationDisplay] = []
+        // Mirrored displays share a frame and should only be scanned once.
+        for display in displays.sorted(by: { $0.id < $1.id }) where !unique.contains(where: { $0.frame == display.frame }) {
+            unique.append(display)
+        }
+        return unique.sorted {
+            let lhsContains = $0.frame.contains(point), rhsContains = $1.frame.contains(point)
+            if lhsContains != rhsContains { return lhsContains }
+            let lhs = distance($0.frame, to: point), rhs = distance($1.frame, to: point)
+            return lhs == rhs ? $0.id < $1.id : lhs < rhs
+        }
+    }
+
+    /// Finish one display before moving to the next; never interleave their
+    /// tiles or launch a separate OCR task for every attached screen.
+    static func scanTiles(on displays: [ExplorationDisplay], around point: CGPoint) -> [ExplorationTile] {
+        orderedDisplays(displays, around: point).flatMap { display in
+            tiles(in: display.content, around: point).map { ExplorationTile(display: display, bounds: $0) }
+        }
+    }
+
+    static func reprioritize(_ tiles: [ExplorationTile], around point: CGPoint) -> [ExplorationTile] {
+        orderedDisplays(tiles.map(\.display), around: point).flatMap { display in
+            tiles.filter { $0.display.id == display.id }.sorted {
+                let lhs = distance($0.bounds, to: point), rhs = distance($1.bounds, to: point)
+                if lhs != rhs { return lhs < rhs }
+                if $0.bounds.minY != $1.bounds.minY { return $0.bounds.minY > $1.bounds.minY }
+                return $0.bounds.minX < $1.bounds.minX
+            }
+        }
+    }
+
+    static func localMarker(_ bounds: CGRect, on frame: CGRect) -> CGRect? {
+        let clipped = bounds.intersection(frame)
+        guard !clipped.isNull, !clipped.isEmpty else { return nil }
+        return clipped.offsetBy(dx: -frame.minX, dy: -frame.minY)
     }
 
     /// Overlapping fixed-size tiles preserve small-text recognition accuracy as

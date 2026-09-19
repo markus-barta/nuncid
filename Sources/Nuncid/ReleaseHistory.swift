@@ -22,6 +22,19 @@ struct ReleaseNote: Identifiable, Equatable {
 enum ReleaseHistory {
     static let notes: [ReleaseNote] = [
         ReleaseNote(
+            version: "260919132529.0.0",
+            isoDate: "2026-09-19",
+            date: "19 September 2026",
+            theme: "Across your displays",
+            headline: "Every display. One detection session.",
+            intro: "Nuncid scans your awake displays one by one and lets you know when an update is ready.",
+            items: [
+                ReleaseNoteItem(label: "Start here, continue there", detail: "Detection starts on the display under your pointer, then checks the others in sequence. Each display keeps its own ticket markers, while repeated references share a lookup."),
+                ReleaseNoteItem(label: "An update at a glance", detail: "A small up-arrow at the top right of the menu-bar icon means a verified update is waiting. Right-click and choose Restart to Update when you are ready.")
+            ],
+            versionScheme: .calendarV2
+        ),
+        ReleaseNote(
             version: "260919123400.0.0",
             isoDate: "2026-09-19",
             date: "19 September 2026",

@@ -22,6 +22,8 @@ jobs:
 
       - name: Exercise the real Sparkle upgrade lifecycle
         run: python3 scripts/test-update-integration.py
+      - name: Render the update-ready menu icon without opening windows
+        run: .build/debug/Nuncid --menu-update-icon-probe .build/menu-update-ready.png
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -30,6 +32,7 @@ jobs:
           path: |
             .build/update-*.log
             .build/update-settings.png
+            .build/menu-update-ready.png
           if-no-files-found: ignore
 
       # PR code never receives release-signing secrets. A reviewed exact source
