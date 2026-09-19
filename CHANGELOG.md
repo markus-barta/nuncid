@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- Discover project routing from configured Paimos instances, including new project keys such as HNET, with local authentication and additional profiles in Settings (NUNCID-95).
+- Restore popup movement through an explicit header drag area (NUNCID-95).
+
 ## [260911121955.0.0] - 2026-09-11
 
 - Publish steady detection, guided permissions and calendar v2 (NUNCID-79)

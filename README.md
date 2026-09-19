@@ -143,7 +143,9 @@ identities are distinct. Pasted scoped PR/run commands and URLs use the same cla
 
 Automatic discovery no longer uses global project history to turn unrelated numbers into tickets. Intentional pinned number/project entry remains available separately, and Nuncid never fabricates a “maybe” result.
 
-- Known PPM projects resolve through the `ppm` Paimos instance; `START` resolves through `pma`.
+- Projects are discovered from the Paimos instances in **Settings → Trackers**; no built-in project routing list is required. Discovery runs at launch and when detection starts (at most every five minutes), with a manual refresh in Settings. Successful lists are cached for offline use. A new screen key such as `HNET-130` triggers a catalog refresh (at most once per 30 seconds) and is looked up only on discovered project owners. Explicit issue URLs stay on their instance. Intentional typed/pasted keys may try configured instances when their project is not yet known.
+- Add additional local `paimos` profile names in Trackers. Existing local authentication is preferred; credentials stay in the CLI’s Keychain. An optional HTTPS browser base URL enables opening tickets for that instance; the local profile determines its API server.
+- Move the popup by dragging the detection label or empty space in its top header. Pin, close, navigation and zoom controls remain clickable.
 - Explicit GitHub pull-request URLs route directly to their repository.
 - Bare numbers need attached reference evidence and a unique local scope; ordinary numbers receive no marker and no lookup.
 - GitHub lookups are limited to configured repositories or an explicit `github.com` URL. Ordinary OCR paths never become network targets.
@@ -156,7 +158,8 @@ The screen crop and Apple Vision OCR stay in the Nuncid process. No screenshot i
 Nuncid launches only local, read-only commands:
 
 ```text
-paimos --instance <ppm|pma> --json issue get <key>
+paimos --instance <configured-name> --json project list --all
+paimos --instance <configured-name> --json issue get <key>
 gh pr view … --json …
 ```
 

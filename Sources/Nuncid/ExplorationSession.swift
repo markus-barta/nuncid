@@ -92,6 +92,7 @@ private final class ExplorationMarkerView: NSView {
     }
 
     func start(at point: CGPoint) {
+        Task { await TrackerDiscovery.shared.refresh() }
         guard CGPreflightScreenCaptureAccess(), let screen = NSScreen.screens.first(where: { $0.frame.contains(point) }),
               Self.displayIsAwake(screen) else { return }
         focus = point
@@ -322,7 +323,6 @@ private final class ExplorationMarkerView: NSView {
                             lines.append(TicketLine(key: line.key, state: line.state, title: line.title,
                                 source: line.source, metadata: [line.metadata, "Matched: \(job.contextReason)"].filter { !$0.isEmpty }.joined(separator: " · "),
                                 detail: line.detail, destination: line.destination, identity: line.id))
-                            break
                         }
                     }
                     if !lines.isEmpty { break }
@@ -361,6 +361,8 @@ private final class ExplorationMarkerView: NSView {
         onStateChange?(true, selected.flatMap { jobs[$0]?.outcome } == .matched, "Exploring outward from pointer…")
         discovery = Task { [weak self] in
             guard let self else { return }
+            if TrackerDirectory.shared.projects.isEmpty { _ = await TrackerDiscovery.shared.refresh() }
+            else { Task { await TrackerDiscovery.shared.refresh() } }
             var contextReads = Set<String>()
             while !tiles.isEmpty {
                 guard !Task.isCancelled, isActive, generation == geometryGeneration else { return }
@@ -380,7 +382,16 @@ private final class ExplorationMarkerView: NSView {
                         startClipped: fragment.screenBounds.minX - captureBounds.minX < edgeMargin,
                         endClipped: captureBounds.maxX - fragment.screenBounds.maxX < edgeMargin)
                 })
-                let references = await planner.classifyScreen(input)
+                var references = await planner.classifyScreen(input)
+                let unknownProjects = Set(references.compactMap { reference -> String? in
+                    guard reference.decision == .unresolved,
+                          case let .issueKey(project, _) = reference.token.kind else { return nil }
+                    return project
+                })
+                if !unknownProjects.isEmpty {
+                    await TrackerDiscovery.shared.refreshUnknownProjects(unknownProjects)
+                    references = await planner.classifyScreen(input)
+                }
                 guard !Task.isCancelled, generation == geometryGeneration else { return }
                 for reference in references where reference.isVisibleCandidate {
                     let token = reference.token
@@ -388,7 +399,7 @@ private final class ExplorationMarkerView: NSView {
                           ScreenContextGeometry.isCompleteIdentifier(anchor.bounds, in: capture.appKitRect(forQuartz: capture.rect)) else { continue }
                     // Semantic identity, not literal equality: PR42 and run42 in
                     // different repositories must never share a resolution job.
-                    let primary = reference.spec.map { [$0] } ?? []
+                    let primary = reference.lookupSpecs
                     if primary.isEmpty, reference.category != .unknown, contextReads.count < 8 {
                         let contextKey = "\(reference.category.rawValue):\(token.raw):\(Int(anchor.bounds.midX / 20)):\(Int(anchor.bounds.midY / 20))"
                         if contextReads.insert(contextKey).inserted {
@@ -511,6 +522,7 @@ private final class ExplorationMarkerView: NSView {
         if !overlay.isVisible || session.automaticEnabled || session.jobs["fixture-1"]?.outcome != .matched || session.jobs["fixture-2"]?.outcome != .queued {
             failures.append("OFF manual selection resolves only the explicit job")
         }
+        failures.append(contentsOf: overlay.checkHeaderDragTargets())
         _ = session.navigate(1, includeMisses: false)
         session.holdPresentation()
         try? await Task.sleep(nanoseconds: 150_000_000)

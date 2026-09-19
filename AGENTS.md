@@ -23,14 +23,19 @@ it vendors the public doctrine only. The private operator pack
   to either service. Private-by-construction (no pixels, OCR text, or ticket
   content leave the process; no telemetry) is a product constraint, not a
   missing feature.
-- Tracker routing constants (`ppm`/`pma` instances, GitHub repos) live in
-  `Sources/Nuncid/TokenParser.swift`; `START` resolves through `pma`, known PPM
-  projects through `ppm`.
+- Paimos project routes are discovered from configured local profiles by
+  `Sources/Nuncid/TrackerDirectory.swift`; Settings manages participating
+  instances. GitHub repository hints live in `TokenParser.swift`.
 - Durable architecture and product knowledge belongs in PPM Knowledge
   (`NUNCID` project). Local documentation stays within the standard repository
   files described by doctrine.
 
 ## Local validation
+
+- Keep agent test/probe windows on the MacBook's built-in display, never over
+  the operator's Studio display work windows. Resolve the built-in display ID
+  at runtime and set `NUNCID_PROBE_DISPLAY_ID` for UI checks; do not assume a
+  fixed display ID. If it is unavailable, keep visual probes closed and ask.
 
 ```sh
 ./scripts/test.sh                                  # build, self-tests, versioning regression

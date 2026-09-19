@@ -440,11 +440,16 @@ import SwiftUI
         if CommandLine.arguments.contains("--permission-status") { print(CGPreflightScreenCaptureAccess() ? "granted" : "missing"); Darwin.exit(0) }
         if let probeIndex = CommandLine.arguments.firstIndex(of: "--resolve-probe"), CommandLine.arguments.indices.contains(probeIndex + 1) {
             let raw = CommandLine.arguments[probeIndex + 1].uppercased()
-            let context = ResolutionContext.load()
-            guard let token = TokenParser.parse([raw]).first, let spec = CandidatePlanner.candidates(for: token, context: context).first else { Darwin.exit(1) }
             Task {
-                guard let line = await TicketResolver().resolve(spec) else { Darwin.exit(1) }
-                print("\(line.key) | \(line.state) | \(line.title)"); Darwin.exit(0)
+                print(await TrackerDiscovery.shared.refresh(force: true))
+                let references = ScreenReferenceClassifier.classify(.init(lines: [raw]))
+                let resolver = TicketResolver()
+                for spec in references.flatMap(\.lookupSpecs) {
+                    if let line = await resolver.resolve(spec) {
+                        print("\(line.key) | \(line.source) | \(line.state) | \(line.title)"); Darwin.exit(0)
+                    }
+                }
+                Darwin.exit(1)
             }
             return
         }
@@ -884,7 +889,7 @@ private struct ShortcutRecorder: NSViewRepresentable {
 }
 
 private enum SettingsPane: String, CaseIterable, Identifiable {
-    case scanning, markers, pinned, appearance, privacy
+    case scanning, markers, pinned, appearance, trackers, privacy
 
     var id: String { rawValue }
     var title: String {
@@ -893,6 +898,7 @@ private enum SettingsPane: String, CaseIterable, Identifiable {
         case .markers: return "Detection Frames"
         case .pinned: return "Pinned Card"
         case .appearance: return "Appearance"
+        case .trackers: return "Trackers"
         case .privacy: return "Privacy"
         }
     }
@@ -902,6 +908,7 @@ private enum SettingsPane: String, CaseIterable, Identifiable {
         case .markers: return "rectangle.dashed"
         case .pinned: return "pin"
         case .appearance: return "paintbrush"
+        case .trackers: return "server.rack"
         case .privacy: return "hand.raised"
         }
     }
@@ -913,6 +920,11 @@ struct SettingsView: View {
     @State private var recorderFeedback: PreferenceFeedback?
     @State private var cacheCleared = false
     @State private var appearanceBeforeReset: PresentationPreferences?
+    @State private var trackerConnections = TrackerDirectory.shared.connections
+    @State private var trackerName = ""
+    @State private var trackerURL = ""
+    @State private var trackerStatus = ""
+    @State private var discoveringProjects = false
 
     init(state: AppState) {
         self.state = state
@@ -920,6 +932,7 @@ struct SettingsView: View {
         if CommandLine.arguments.contains("--settings-appearance-probe") { _selection = State(initialValue: .appearance) }
         else if CommandLine.arguments.contains("--settings-pinned-probe") { _selection = State(initialValue: .pinned) }
         else if CommandLine.arguments.contains("--settings-markers-probe") { _selection = State(initialValue: .markers) }
+        else if CommandLine.arguments.contains("--settings-trackers-probe") { _selection = State(initialValue: .trackers) }
 #endif
     }
 
@@ -994,7 +1007,66 @@ struct SettingsView: View {
         case .markers: markersPage
         case .pinned: pinnedPage
         case .appearance: appearancePage
+        case .trackers: trackersPage
         case .privacy: privacyPage
+        }
+    }
+
+    private var trackersPage: some View {
+        SettingsPage(title: "Trackers", subtitle: "Discover projects automatically from your Paimos instances.") {
+            SettingsCard {
+                SettingsCardHeader(icon: "key", title: "Local paimos authentication · preferred", subtitle: "Nuncid uses your existing named paimos profiles and their Keychain credentials. No credentials are copied into Nuncid.")
+                Text("Authenticate an additional instance with paimos auth login, then add its profile name here. Nuncid only reads projects and issues.").font(.callout)
+                Text("Projects refresh at launch and when detection starts. A new screen key refreshes the catalog before lookup; only its discovered instances receive the key. Ordinary numbers need local project context.").font(.caption).foregroundStyle(.secondary)
+            }
+            SettingsCard {
+                ForEach(trackerConnections) { connection in
+                    HStack {
+                        VStack(alignment: .leading) {
+                            Text(connection.id).fontWeight(.semibold)
+                            Text(connection.webURL.isEmpty ? "Browser link not configured" : connection.webURL).font(.caption).foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        Button("Remove") {
+                            trackerConnections.removeAll { $0.id == connection.id }
+                            saveTrackers()
+                        }.disabled(discoveringProjects)
+                    }
+                    Divider()
+                }
+                TextField("Local paimos profile name", text: $trackerName)
+                TextField("Browser base URL (optional, https://…)", text: $trackerURL)
+                Text("The URL is used for opening tickets; the local paimos profile chooses the API server.").font(.caption).foregroundStyle(.secondary)
+                Button("Add or Update Instance") {
+                    guard let connection = TrackerConnection.validated(name: trackerName, webURL: trackerURL) else {
+                        trackerStatus = "Enter a valid profile name and an HTTPS URL without credentials, query or fragment."; return
+                    }
+                    trackerConnections.removeAll { $0.id == connection.id }
+                    trackerConnections.append(connection)
+                    trackerName = ""; trackerURL = ""
+                    saveTrackers()
+                }.disabled(discoveringProjects)
+            }
+            SettingsCard {
+                Button(discoveringProjects ? "Discovering…" : "Refresh Projects") { refreshProjects() }
+                    .disabled(discoveringProjects)
+                Text(trackerStatus.isEmpty ? "\(TrackerDirectory.shared.projects.count) cached projects. New projects need no app update." : trackerStatus)
+                    .font(.callout).foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private func saveTrackers() {
+        TrackerDirectory.shared.replace(connections: trackerConnections, projects: TrackerDirectory.shared.projects.filter { project in trackerConnections.contains { $0.tracker == project.tracker } })
+        state.clearCache()
+        refreshProjects()
+    }
+
+    private func refreshProjects() {
+        discoveringProjects = true
+        Task {
+            trackerStatus = await TrackerDiscovery.shared.refresh(force: true)
+            discoveringProjects = false
         }
     }
 

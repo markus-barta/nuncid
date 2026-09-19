@@ -234,6 +234,7 @@ enum LookupHighlightVisibilityPolicy {
     }
 
     func start() {
+        Task { await TrackerDiscovery.shared.refresh() }
         timer = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.tick() }
         }
@@ -914,23 +915,22 @@ enum LookupHighlightVisibilityPolicy {
         let key = "\(project.key)-\(number)"
         PinnedTicketContext(project: project.key, number: number).persist()
         overlay.setInput(key); appState?.activity = "Resolving \(key)…"
-        var trackers = [project.tracker]
-        if !CandidatePlanner.ppmProjects.contains(project.key), !CandidatePlanner.pmaProjects.contains(project.key) {
-            trackers.append(project.tracker.other)
-        }
+        let trackers = TrackerDirectory.shared.routes(for: project.key, preferred: project.tracker, allowUndiscovered: true)
         let plan = DirectEntryResolutionPlanner.plan(project: project.key, key: key, trackers: trackers)
         let foreground = ForegroundApplicationContext.capture()
         editTask = Task {
-            let resolved = await resolver.resolve(plan).first
+            let matches = await resolver.resolve(plan)
             guard !Task.isCancelled, generation == directGeneration, overlay.isVisible else { return }
-            if let resolved,
+            if let resolved = matches.first,
                case let .issue(tracker, _) = resolved.proposal.spec {
                 let line = resolved.line
-                overlay.replacePinnedResults([line], selecting: line.key)
-                if let decision = plan.learningDecision(for: resolved.proposal, userConfirmed: true) {
+                overlay.replacePinnedResults(matches.map(\.line), selecting: line.key)
+                if matches.count == 1, let decision = plan.learningDecision(for: resolved.proposal, userConfirmed: true) {
                     ResolutionHistoryStore.record(decision, bundleIdentifier: foreground?.bundleIdentifier)
                 }
-                var context = ResolutionContext.load(); context.saw(project: project.key, on: tracker)
+                if matches.count == 1 {
+                    var context = ResolutionContext.load(); context.saw(project: project.key, on: tracker)
+                }
                 PinnedTicketContext(project: project.key, number: number).persist()
                 appState?.activity = line.title
             } else {

@@ -145,9 +145,7 @@ enum TokenParser {
 }
 
 enum CandidatePlanner {
-    static let ppmProjects: Set<String> = ["NUNCID", "GLINT", "HAUSV", "JANUS", "PHAROS", "PAI", "INSPR"]
-    static let pmaProjects: Set<String> = ["START"]
-    static let issueURLTrackers: [String: Tracker] = ["pm.barta.cm": .ppm, "paimos.agm.ng": .pma]
+    static var projectKeys: Set<String> { Set(ProjectDescriptor.known.map(\.key)) }
 
     /// Explicit GitHub CLI/URL scope only. Reject hosts, paths, shell syntax,
     /// empty components and option-like owner names before constructing argv.
@@ -164,27 +162,23 @@ enum CandidatePlanner {
     }
 
     static func tracker(for project: String, context: ResolutionContext) -> Tracker {
-        if pmaProjects.contains(project) { return .pma }
-        if ppmProjects.contains(project) { return .ppm }
-        return context.lastSeenTracker
+        TrackerDirectory.shared.routes(for: project, preferred: context.lastSeenTracker).first ?? context.lastSeenTracker
     }
 
-    static func candidates(for token: NearbyToken, context: ResolutionContext) -> [CandidateSpec] {
+    static func candidates(for token: NearbyToken, context: ResolutionContext, allowUndiscovered: Bool = false) -> [CandidateSpec] {
         switch token.kind {
         case let .issueKey(project, number):
             let key = "\(project)-\(number)"
-            let primary = tracker(for: project, context: context)
-            if ppmProjects.contains(project) || pmaProjects.contains(project) { return [.issue(tracker: primary, key: key)] }
-            return [.issue(tracker: primary, key: key), .issue(tracker: primary.other, key: key)]
+            return TrackerDirectory.shared.routes(for: project, preferred: context.lastSeenTracker, allowUndiscovered: allowUndiscovered)
+                .map { .issue(tracker: $0, key: key) }
         case let .hashNumber(number), let .bareNumber(number):
             let first = context.lastSeenTracker
-            let second = first.other
             let firstProject = context.project(for: first)
-            let secondProject = context.project(for: second)
-            var candidates: [CandidateSpec] = [
-                .issue(tracker: first, key: "\(firstProject)-\(number)"),
-                .issue(tracker: second, key: "\(secondProject)-\(number)"),
-            ]
+            let configured = TrackerDirectory.shared.connections.map(\.tracker)
+            let trackers = configured.filter { $0 == first } + configured.filter { $0 != first }
+            var candidates: [CandidateSpec] = trackers.compactMap { tracker in
+                context.rememberedProject(for: tracker).map { .issue(tracker: tracker, key: "\($0)-\(number)") }
+            }
             if let repo = repo(for: firstProject) {
                 candidates.append(.pullRequest(number: number, repo: repo))
             }

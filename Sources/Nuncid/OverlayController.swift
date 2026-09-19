@@ -194,6 +194,44 @@ private final class FocusablePanel: NSPanel {
     override var canBecomeMain: Bool { false }
 }
 
+/// SwiftUI hosting views consume background mouse events. Give the header's
+/// free space a native drag surface without covering any interactive controls.
+struct InspectionWindowDragArea: NSViewRepresentable {
+    final class DragView: NSView {
+        private var dragStart: (pointer: CGPoint, origin: CGPoint)?
+        override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+        override var mouseDownCanMoveWindow: Bool { false }
+        override func mouseDown(with event: NSEvent) {
+            guard let window else { return }
+            dragStart = (window.convertPoint(toScreen: event.locationInWindow), window.frame.origin)
+            if window.isVisible { NSCursor.closedHand.set() }
+        }
+        override func mouseDragged(with event: NSEvent) {
+            guard let start = dragStart, let window else { return }
+            let pointer = window.convertPoint(toScreen: event.locationInWindow)
+            var origin = CGPoint(x: start.origin.x + pointer.x - start.pointer.x,
+                                 y: start.origin.y + pointer.y - start.pointer.y)
+            // An explicitly selected probe display is a hard boundary so UI
+            // automation cannot intrude on the operator's other work displays.
+            if let screen = NuncidWindowPlacement.probeScreen ?? NSScreen.screens.first(where: { $0.frame.contains(pointer) }) ?? window.screen {
+                origin = PanelPlacement.clamped(origin: origin, size: window.frame.size, visibleFrame: screen.visibleFrame)
+            }
+            window.setFrameOrigin(origin)
+        }
+        override func mouseUp(with event: NSEvent) {
+            dragStart = nil
+            if window?.isVisible == true { NSCursor.openHand.set() }
+        }
+        override func resetCursorRects() { addCursorRect(bounds, cursor: .openHand) }
+    }
+    func makeNSView(context: Context) -> DragView {
+        let view = DragView()
+        view.toolTip = "Drag to move the inspection window"
+        return view
+    }
+    func updateNSView(_ nsView: DragView, context: Context) { }
+}
+
 struct StatusPill: View {
     let state: String
     private var color: Color {
@@ -626,7 +664,8 @@ struct OverlayContent: View {
                 GhostNavigationButton(systemName: "xmark", label: "Close inspection and stop detection", action: onClose)
                 Text(detectionEnabled ? "Detection on" : "Detection off")
                     .font(.caption.weight(.medium)).foregroundStyle(.secondary).lineLimit(1)
-                Spacer(minLength: 0)
+                    .overlay(InspectionWindowDragArea())
+                InspectionWindowDragArea().frame(maxWidth: .infinity, minHeight: 24)
                 PinnedNavigationButtons(resultNavigationEnabled: true, onCycleResult: onCycleResult, onCycleProject: onCycleProject)
                 PinToggleButton(isPinned: sticky, action: onTogglePin)
             }.frame(height: 24)
@@ -943,6 +982,23 @@ private struct OverlayRootView: View {
 
 #if DEBUG
     var debugPermissionGuideVisible: Bool { panel.isVisible && viewState.permissionRequired }
+    func checkHeaderDragTargets() -> [String] {
+        guard let content = panel.contentView else { return ["Missing inspection content view"] }
+        content.layoutSubtreeIfNeeded()
+        func dragViews(in view: NSView) -> [NSView] {
+            (view is InspectionWindowDragArea.DragView ? [view] : []) + view.subviews.flatMap { dragViews(in: $0) }
+        }
+        let views = dragViews(in: content)
+        guard !views.isEmpty else { return ["Inspection header has no native drag surface"] }
+        for view in views {
+            // NSView.hitTest takes points in the receiver's superview coordinates.
+            let center = view.convert(CGPoint(x: view.bounds.midX, y: view.bounds.midY), to: content.superview)
+            if view.bounds.width <= 0 || view.bounds.height <= 0 || content.hitTest(center) !== view {
+                return ["Inspection header drag surface is not hittable: bounds=\(view.bounds), center=\(center), hit=\(String(describing: content.hitTest(center)))"]
+            }
+        }
+        return []
+    }
     var debugOpacity: CGFloat { panel.alphaValue }
     var debugScrollPresentation: [String: Any] {
         ["target": requestedScrollOpacity, "pointerInside": containsPointer,
@@ -999,7 +1055,8 @@ private struct OverlayRootView: View {
         panel.isOpaque = false; panel.backgroundColor = .clear; panel.hasShadow = true
         panel.ignoresMouseEvents = false; panel.hidesOnDeactivate = false
         panel.sharingType = allowsCapture ? .readOnly : .none
-        panel.isMovableByWindowBackground = true
+        panel.isMovableByWindowBackground = false
+        panel.isMovable = true
         panel.contentMinSize = OverlaySizePolicy.minimum
         panel.contentMaxSize = OverlaySizePolicy.fallbackMaximum
         panel.contentView = NSHostingView(rootView: OverlayRootView(

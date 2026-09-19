@@ -83,6 +83,8 @@ actor TicketResolver {
 
     func resolve(_ spec: CandidateSpec) async -> TicketLine? {
         guard !Task.isCancelled else { return nil }
+        if lookupForTesting == nil, case let .issue(tracker, _) = spec,
+           !TrackerDirectory.shared.connections.contains(where: { $0.tracker == tracker }) { return nil }
         if let entry = cache[spec.cacheKey] {
             let ttl = GitHubRunPreview.cacheLifetime(for: spec, line: entry.line)
             if Date().timeIntervalSince(entry.savedAt) < ttl { return Task.isCancelled ? nil : entry.line }
@@ -194,9 +196,10 @@ actor TicketResolver {
     }
 
     private func resolveIssue(tracker: Tracker, key: String) async -> TicketLine? {
-        guard let executable = Self.findExecutable(named: "paimos"),
-              let data = await Self.run(executable, ["--instance", tracker.rawValue, "--json", "issue", "get", key]),
-              let issue = try? JSONDecoder().decode(PaimosIssue.self, from: data) else { return nil }
+        guard TrackerDirectory.shared.connections.contains(where: { $0.tracker == tracker }),
+              let data = await Self.readPaimos(tracker, ["issue", "get", key]),
+              let issue = try? JSONDecoder().decode(PaimosIssue.self, from: data),
+              Self.matchesIssueKey(requested: key, returned: issue.issueKey) else { return nil }
         let metadata = [
             issue.type?.replacingOccurrences(of: "_", with: " "),
             issue.priority.map { "\($0) priority" },
@@ -208,8 +211,18 @@ actor TicketResolver {
             source: tracker.rawValue,
             metadata: metadata,
             detail: Self.excerpt(issue.description),
-            destination: "\(tracker == .ppm ? "https://pm.barta.cm" : "https://paimos.agm.ng")/issues/\(issue.issueKey)"
+            destination: TrackerDirectory.shared.connections.first { $0.tracker == tracker }?.destination(key: issue.issueKey)
         )
+    }
+
+    static func readPaimos(_ tracker: Tracker, _ arguments: [String]) async -> Data? {
+        guard let executable = findExecutable(named: "paimos") else { return nil }
+        return await run(executable, ["--instance", tracker.rawValue, "--json"] + arguments, localPaimosAuth: true)
+    }
+
+    static func matchesIssueKey(requested: String, returned: String) -> Bool {
+        let key = requested.uppercased(), result = returned.uppercased()
+        return key == result || (key.hasPrefix("GLINT-") && result == "NUNCID-" + key.dropFirst(6))
     }
 
     private func resolvePullRequest(number: Int, repo: String) async -> TicketLine? {
@@ -263,7 +276,7 @@ actor TicketResolver {
         await run(executable, arguments)
     }
 
-    private static func run(_ executable: URL, _ arguments: [String]) async -> Data? {
+    private static func run(_ executable: URL, _ arguments: [String], localPaimosAuth: Bool = false) async -> Data? {
         guard !Task.isCancelled else { return nil }
         let process = Process()
         let stdout = Pipe()
@@ -271,6 +284,13 @@ actor TicketResolver {
         let output = ProcessOutputBuffer()
         process.executableURL = executable
         process.arguments = arguments
+        if localPaimosAuth {
+            // An inherited process override must never send every named instance
+            // to one URL or reuse one credential across namespaces.
+            var environment = ProcessInfo.processInfo.environment
+            for name in ["PAIMOS_URL", "PAIMOS_API_KEY", "PPM_URL", "PPMAPIKEY"] { environment.removeValue(forKey: name) }
+            process.environment = environment
+        }
         process.standardOutput = stdout
         process.standardError = FileHandle.nullDevice
         stdout.fileHandleForReading.readabilityHandler = { handle in
