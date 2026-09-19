@@ -25,21 +25,36 @@ struct ClassifiedScreenReference: Hashable, Sendable {
     let category: ScreenReferenceCategory
     let decision: ScreenReferenceDecision
     let reason: String
+    var hasExplicitInstance = false
 
     var spec: CandidateSpec? {
         if case let .lookup(spec) = decision { return spec }
         return nil
     }
     var isVisibleCandidate: Bool { decision != .ignore }
+    var lookupSpecs: [CandidateSpec] {
+        guard let spec else { return [] }
+        guard category == .issue, !hasExplicitInstance,
+              case let .issue(_, key) = spec, let project = key.split(separator: "-").first else { return [spec] }
+        return TrackerDirectory.shared.routes(for: String(project)).map { .issue(tracker: $0, key: key) }
+    }
 }
 
 enum ScreenReferenceClassifier {
     static let maximumFragments = 256
     static let maximumCharactersPerFragment = 2_048
     static let maximumReferences = 512
-    private static func regex(_ pattern: String) -> NSRegularExpression { try! NSRegularExpression(pattern: pattern) }
+    private static let regexCache: NSCache<NSString, NSRegularExpression> = {
+        let cache = NSCache<NSString, NSRegularExpression>(); cache.countLimit = 128; return cache
+    }()
+    private static func regex(_ pattern: String) -> NSRegularExpression {
+        if let cached = regexCache.object(forKey: pattern as NSString) { return cached }
+        let compiled = try! NSRegularExpression(pattern: pattern)
+        regexCache.setObject(compiled, forKey: pattern as NSString)
+        return compiled
+    }
     private static let url = regex(#"(?i)https?://github\.com/([a-z0-9-]+/[a-z0-9_.-]+)/(pull|actions/runs)/([0-9]+)(?![\w.-])"#)
-    private static let issueURL = regex(#"(?i)https?://([^/\s]+)/issues/([a-z][a-z0-9]{1,11})-([0-9]+)(?![\w.-])"#)
+    private static let issueURL = regex(#"(?i)(https?://[^\s?#]+?)/issues/([a-z][a-z0-9]{1,11})-([0-9]+)(?![\w.-])"#)
     private static let label = regex(#"(?i)(?<![\w-])(?:release-)?(PR|pull[ -]+request|ticket|issue)\s*(?:number\s*|no\.?\s*|[:#]\s*)?([0-9]+)(?![\w]|\.[0-9])"#)
     private static let words = regex(#"'[^']*'|"[^"]*"|[;&|\n]|[^\s;&|]+"#)
     private static let inheritedLabel = regex(#"(?i)(?:\bgh\s+(?:pr|run)\s+view|\bPR|\bpull[ -]+request|\bticket|\bissue)\s*[:#]?\s*$"#)
@@ -47,8 +62,12 @@ enum ScreenReferenceClassifier {
     private static let repoFlag = regex(#"(?:^|\s)(?:(?:--|[—–−]-?)repo(?:=|\s+)|-R\s*)([^\s;&|]+)"#)
     private static let repoURL = regex(#"(?i)https?://github\.com/([a-z0-9-]+/[a-z0-9_.-]+)"#)
     private static let slug = regex(#"(?<![\w./-])([A-Za-z0-9-]+/[A-Za-z0-9_.-]+)(?![\w./-])"#)
-    private static let project = regex("\\b(?:" + (CandidatePlanner.ppmProjects.union(CandidatePlanner.pmaProjects)).sorted().joined(separator: "|") + ")\\b")
-    private static let projectNumber = regex("\\b(" + (CandidatePlanner.ppmProjects.union(CandidatePlanner.pmaProjects)).sorted().joined(separator: "|") + ")\\s+#?([0-9]+)(?![\\w]|\\.[0-9])")
+    private static var projectAlternatives: String {
+        let keys = CandidatePlanner.projectKeys
+        return keys.isEmpty ? "(?!)" : keys.sorted().map(NSRegularExpression.escapedPattern).joined(separator: "|")
+    }
+    private static var project: NSRegularExpression { regex("\\b(?:" + projectAlternatives + ")\\b") }
+    private static var projectNumber: NSRegularExpression { regex("\\b(" + projectAlternatives + ")\\s+#?([0-9]+)(?![\\w]|\\.[0-9])") }
 
     private struct Noise {
         let pattern: NSRegularExpression
@@ -125,7 +144,7 @@ enum ScreenReferenceClassifier {
                     confidence: fragment.confidence, region: fragment.region)
             }
             func append(_ range: NSRange, kind: NearbyToken.Kind, category: ScreenReferenceCategory,
-                        decision: ScreenReferenceDecision, reason: String) {
+                        decision: ScreenReferenceDecision, reason: String, hasExplicitInstance: Bool = false) {
                 guard !covered.contains(where: { NSIntersectionRange($0, range).length > 0 }),
                       let found = token(range, kind: kind) else { return }
                 covered.append(range)
@@ -135,7 +154,7 @@ enum ScreenReferenceClassifier {
                     guard visibleCount < maximumReferences else { return }
                     visibleCount += 1
                 }
-                result.append(ClassifiedScreenReference(token: found, category: category, decision: decision, reason: reason))
+                result.append(ClassifiedScreenReference(token: found, category: category, decision: decision, reason: reason, hasExplicitInstance: hasExplicitInstance))
             }
             func resolve(_ range: NSRange, category: ScreenReferenceCategory, number: Int, scopes: [String], invalid: Bool, reason: String) {
                 let unique = Set(scopes)
@@ -145,7 +164,7 @@ enum ScreenReferenceClassifier {
                     case .workflowRun: spec = .workflowRun(id: number, repo: scope)
                     case .pullRequest: spec = .pullRequest(number: number, repo: scope)
                     case .issue:
-                        spec = .issue(tracker: CandidatePlanner.pmaProjects.contains(scope) ? .pma : .ppm, key: "\(scope)-\(number)")
+                        spec = TrackerDirectory.shared.routes(for: scope).first.map { .issue(tracker: $0, key: "\(scope)-\(number)") }
                     case .unknown: spec = nil
                     }
                 } else { spec = nil }
@@ -155,12 +174,12 @@ enum ScreenReferenceClassifier {
             }
 
             for match in issueURL.matches(in: text, range: fullRange(text)) {
-                guard complete(match.range), isWholeURLStart(match.range, in: text), let tracker = CandidatePlanner.issueURLTrackers[ns.substring(with: match.range(at: 1)).lowercased()],
+                guard complete(match.range), isWholeURLStart(match.range, in: text), let tracker = TrackerDirectory.shared.tracker(forBaseURL: ns.substring(with: match.range(at: 1))),
                       let number = Int(ns.substring(with: match.range(at: 3))), number > 0 else { continue }
                 let project = ns.substring(with: match.range(at: 2)).uppercased()
                 let range = NSRange(location: match.range(at: 2).location, length: NSMaxRange(match.range(at: 3)) - match.range(at: 2).location)
                 append(range, kind: .issueKey(project: project, number: number), category: .issue,
-                       decision: .lookup(.issue(tracker: tracker, key: "\(project)-\(number)")), reason: "Explicit Paimos issue URL")
+                       decision: .lookup(.issue(tracker: tracker, key: "\(project)-\(number)")), reason: "Explicit Paimos issue URL", hasExplicitInstance: true)
             }
             for match in url.matches(in: text, range: fullRange(text)) {
                 guard complete(match.range), isWholeURLStart(match.range, in: text) else { continue }
@@ -191,9 +210,9 @@ enum ScreenReferenceClassifier {
                     append(range, kind: original.kind, category: .issue, decision: .ignore, reason: noise)
                 } else if compound || inCommand {
                     append(range, kind: original.kind, category: .issue, decision: .ignore, reason: "Compound name or command argument")
-                } else if CandidatePlanner.ppmProjects.contains(project) || CandidatePlanner.pmaProjects.contains(project) {
+                } else if let tracker = TrackerDirectory.shared.routes(for: project).first {
                     append(range, kind: original.kind, category: .issue,
-                           decision: number > 0 ? .lookup(.issue(tracker: CandidatePlanner.pmaProjects.contains(project) ? .pma : .ppm, key: "\(project)-\(number)")) : .ignore,
+                           decision: number > 0 ? .lookup(.issue(tracker: tracker, key: "\(project)-\(number)")) : .ignore,
                            reason: "Explicit \(project) issue key")
                 } else {
                     append(range, kind: original.kind, category: .issue, decision: .unresolved, reason: "Project routing needed")
@@ -312,7 +331,7 @@ enum ScreenReferenceClassifier {
     private static func repositoryScopes(in lines: [OCRContextFragment]) -> (scopes: [String], invalid: Bool) {
         var repos: [String] = []
         var invalid = false
-        let canonical = Set(CandidatePlanner.ppmProjects.union(CandidatePlanner.pmaProjects).compactMap { CandidatePlanner.repo(for: $0) })
+        let canonical = Set(ProjectDescriptor.presentationHints.compactMap { CandidatePlanner.repo(for: $0.key) })
         for fragment in lines {
             let line = fragment.text
             let ns = line as NSString

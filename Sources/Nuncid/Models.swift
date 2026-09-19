@@ -1,10 +1,26 @@
 import Carbon
 import Foundation
 
-enum Tracker: String, Codable, CaseIterable, Sendable {
-    case ppm
-    case pma
-    var other: Tracker { self == .ppm ? .pma : .ppm }
+struct Tracker: RawRepresentable, Codable, Hashable, Sendable {
+    let rawValue: String
+    init?(rawValue: String) {
+        guard rawValue.range(of: #"\A[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}\z"#, options: .regularExpression) != nil else { return nil }
+        self.rawValue = rawValue
+    }
+    static let ppm = Tracker(rawValue: "ppm")!
+    static let pma = Tracker(rawValue: "pma")!
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        let value = try container.decode(String.self)
+        guard let tracker = Tracker(rawValue: value) else {
+            throw DecodingError.dataCorruptedError(in: container, debugDescription: "Invalid instance name")
+        }
+        self = tracker
+    }
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(rawValue)
+    }
 }
 
 struct HotKeyModifiers: OptionSet, Codable, Hashable {
@@ -125,13 +141,14 @@ struct TicketLine: Codable, Hashable, Identifiable, Sendable {
     var destinationURL: URL? {
         if let destination, let url = URL(string: destination) { return url }
         switch source.lowercased() {
-        case "ppm": return URL(string: "https://pm.barta.cm/issues/\(key)")
-        case "pma": return URL(string: "https://paimos.agm.ng/issues/\(key)")
         case "gh":
             let repo = metadata.split(separator: "·", maxSplits: 1).first?.trimmingCharacters(in: .whitespacesAndNewlines)
             guard let repo, !repo.isEmpty, key.hasPrefix("#") else { return nil }
             return URL(string: "https://github.com/\(repo)/pull/\(key.dropFirst())")
-        default: return nil
+        default:
+            guard let connection = TrackerDirectory.shared.connections.first(where: { $0.id == source }),
+                  let destination = connection.destination(key: key) else { return nil }
+            return URL(string: destination)
         }
     }
 }
@@ -152,12 +169,14 @@ struct ResolutionContext: Equatable, Sendable {
     var lastSeenTracker: Tracker
     var ppmProject: String
     var pmaProject: String
+    var additionalProjects: [String: String] = [:]
 
     static func load(defaults: UserDefaults = .standard) -> ResolutionContext {
         ResolutionContext(
             lastSeenTracker: Tracker(rawValue: defaults.string(forKey: "lastSeenTracker") ?? "ppm") ?? .ppm,
             ppmProject: defaults.string(forKey: "lastPPMProject") ?? "PAI",
-            pmaProject: defaults.string(forKey: "lastPMAProject") ?? "START"
+            pmaProject: defaults.string(forKey: "lastPMAProject") ?? "START",
+            additionalProjects: defaults.dictionary(forKey: "lastAdditionalProjects") as? [String: String] ?? [:]
         )
     }
 
@@ -165,16 +184,29 @@ struct ResolutionContext: Equatable, Sendable {
         defaults.removeObject(forKey: "lastSeenTracker")
         defaults.removeObject(forKey: "lastPPMProject")
         defaults.removeObject(forKey: "lastPMAProject")
+        defaults.removeObject(forKey: "lastAdditionalProjects")
     }
 
-    func project(for tracker: Tracker) -> String { tracker == .ppm ? ppmProject : pmaProject }
+    func project(for tracker: Tracker) -> String {
+        if tracker == .ppm { return ppmProject }
+        if tracker == .pma { return pmaProject }
+        return additionalProjects[tracker.rawValue] ?? TrackerDirectory.shared.projects.first(where: { $0.tracker == tracker })?.key ?? ppmProject
+    }
+
+    func rememberedProject(for tracker: Tracker) -> String? {
+        if tracker == .ppm { return ppmProject }
+        if tracker == .pma { return pmaProject }
+        return additionalProjects[tracker.rawValue]
+    }
 
     mutating func saw(project: String, on tracker: Tracker, defaults: UserDefaults = .standard) {
         lastSeenTracker = tracker
-        if tracker == .ppm { ppmProject = project } else { pmaProject = project }
+        if tracker == .ppm { ppmProject = project } else if tracker == .pma { pmaProject = project }
+        else { additionalProjects[tracker.rawValue] = project }
         defaults.set(tracker.rawValue, forKey: "lastSeenTracker")
         defaults.set(ppmProject, forKey: "lastPPMProject")
         defaults.set(pmaProject, forKey: "lastPMAProject")
+        defaults.set(additionalProjects, forKey: "lastAdditionalProjects")
     }
 }
 
@@ -289,14 +321,16 @@ struct PinnedEditState: Equatable {
     mutating func clear() { numberBuffer = nil; projectQuery = ""; projectBeforeQuery = nil }
 }
 
-struct ProjectDescriptor: Hashable, Identifiable {
+struct ProjectDescriptor: Hashable, Identifiable, Codable, Sendable {
     let key: String
     let name: String
     let aliases: [String]
     let tracker: Tracker
-    var id: String { key }
+    var id: String { "\(tracker.rawValue):\(key)" }
 
-    static let known: [ProjectDescriptor] = [
+    static var known: [ProjectDescriptor] { TrackerDirectory.shared.projects }
+    // Names/aliases are presentation hints only; they never authorize a route.
+    static let presentationHints: [ProjectDescriptor] = [
         .init(key: "NUNCID", name: "Nuncid", aliases: ["nuncid", "nun sid", "identify now", "ticket lens"], tracker: .ppm),
         // Retain OCR/history resolution for old ticket keys; hide from selection.
         .init(key: "GLINT", name: "Glint (historical)", aliases: ["glint"], tracker: .ppm),
@@ -307,14 +341,22 @@ struct ProjectDescriptor: Hashable, Identifiable {
         .init(key: "PHAROS", name: "Pharos", aliases: ["pharos", "pharos crm"], tracker: .ppm),
         .init(key: "START", name: "Start AGM", aliases: ["start", "start agm"], tracker: .pma),
     ]
-    static let selectable = known.filter { $0.key != "GLINT" }.map { project in
+    static var selectable: [ProjectDescriptor] { known.filter { $0.key != "GLINT" }.map { project in
         project.key == "NUNCID"
             ? ProjectDescriptor(key: project.key, name: project.name, aliases: project.aliases + ["glint"], tracker: project.tracker)
             : project
-    }
+    } }
 }
 
 enum ProjectMatcher {
+    static func cycle(_ direction: Int, projects: [ProjectDescriptor], current: String, tracker: Tracker?) -> ProjectDescriptor? {
+        guard !projects.isEmpty else { return nil }
+        let index = projects.firstIndex { $0.key == current && $0.tracker == tracker }
+            ?? projects.firstIndex { $0.key == current } ?? 0
+        let step = direction < 0 ? -1 : 1
+        return projects[(index + step + projects.count) % projects.count]
+    }
+
     static func bestMatch(for rawQuery: String, projects: [ProjectDescriptor] = ProjectDescriptor.selectable, current: String? = nil) -> ProjectDescriptor? {
         let query = normalize(rawQuery)
         guard !query.isEmpty else { return projects.first(where: { $0.key == current }) ?? projects.first }

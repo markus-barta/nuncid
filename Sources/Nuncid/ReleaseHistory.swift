@@ -22,6 +22,29 @@ struct ReleaseNote: Identifiable, Equatable {
 enum ReleaseHistory {
     static let notes: [ReleaseNote] = [
         ReleaseNote(
+            version: "260919094934.0.0",
+            isoDate: "2026-09-19",
+            date: "19 September 2026",
+            theme: "Your projects, wherever they live",
+            headline: "Find the right tracker. Move freely.",
+            intro: "Nuncid discovers your Paimos projects and keeps the inspection window easy to place.",
+            items: [
+                ReleaseNoteItem(label: "Projects appear automatically", detail: "Ticket keys such as HNET find their owning Paimos instance. Add local profiles in Trackers settings and keep using your existing Paimos authentication."),
+                ReleaseNoteItem(label: "Put the popup where you need it", detail: "Drag the popup by its header while keeping its navigation and pin controls within reach.")
+            ],
+            versionScheme: .calendarV2
+        ),
+        ReleaseNote(
+            version: "260919093937.0.0",
+            isoDate: "2026-09-19",
+            date: "19 September 2026",
+            theme: "Validation candidate — not published",
+            headline: "Retired before distribution.",
+            intro: "This candidate passed package checks and was replaced after a final profile-navigation correction.",
+            items: [ReleaseNoteItem(label: "A later release contains the fix", detail: "The replacement preserves case-sensitive local profile names. This candidate was never published or installed.")],
+            versionScheme: .calendarV2
+        ),
+        ReleaseNote(
             version: "260911121955.0.0",
             isoDate: "2026-09-11",
             date: "11 September 2026",

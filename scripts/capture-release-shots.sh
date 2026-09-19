@@ -37,6 +37,7 @@ capture_probe settings-scanning --settings-capture-probe
 capture_probe settings-markers --settings-markers-probe --settings-capture-probe
 capture_probe settings-pinned --settings-pinned-probe --settings-capture-probe
 capture_probe settings-appearance --settings-appearance-probe --settings-capture-probe
+capture_probe settings-trackers --settings-trackers-probe --settings-capture-probe
 capture_probe version-history --version-history-probe --version-history-capture-probe
 capture_probe version-history-dark --version-history-probe --version-history-dark-probe --version-history-capture-probe
 
@@ -45,7 +46,7 @@ capture_probe version-history-dark --version-history-probe --version-history-dar
 "$binary" --permission-capture-probe "$capture_dir/permission-guide-$version.png" "$capture_dir/Nuncid.app"
 "$binary" --permission-helper-probe --permission-capture-probe "$capture_dir/permission-helper-$version.png" "$capture_dir/Nuncid.app"
 
-for stem in pinned-card inspection-unpinned inspection-zoom30 inspection-zoom300 workflow-run lookup-highlight settings-scanning settings-markers settings-pinned settings-appearance version-history version-history-dark permission-guide permission-helper; do
+for stem in pinned-card inspection-unpinned inspection-zoom30 inspection-zoom300 workflow-run lookup-highlight settings-scanning settings-markers settings-pinned settings-appearance settings-trackers version-history version-history-dark permission-guide permission-helper; do
   mv "$capture_dir/$stem-$version.png" "$screenshots/$stem-$version.png"
 done
 print -r -- "Captured Nuncid $version release visuals"

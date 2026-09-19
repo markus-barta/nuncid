@@ -233,7 +233,7 @@ enum LearnedContextStore {
 }
 
 enum EvidenceCandidatePlanner {
-    private static let canonicalRepos = Set(ProjectDescriptor.known.compactMap {
+    private static let canonicalRepos = Set(ProjectDescriptor.presentationHints.compactMap {
         CandidatePlanner.repo(for: $0.key)?.lowercased()
     })
     private static let githubURLRegex = try! NSRegularExpression(
@@ -352,15 +352,9 @@ enum EvidenceCandidatePlanner {
             switch token.kind {
             case let .issueKey(project, number):
                 let key = "\(project)-\(number)"
-                let primary = CandidatePlanner.tracker(for: project, context: context)
                 let reason = ResolutionReason(code: "explicit-key", label: "explicit \(key)", weight: 10_000, strength: .decisive)
-                add(.issue(tracker: primary, key: key), token: token, project: project, reason: reason, eligibility: .explicit)
-                if !CandidatePlanner.ppmProjects.contains(project), !CandidatePlanner.pmaProjects.contains(project) {
-                    add(
-                        .issue(tracker: primary.other, key: key), token: token, project: project,
-                        reason: ResolutionReason(code: "unknown-key-fallback", label: "alternate tracker", weight: 9_700, strength: .strong),
-                        eligibility: .explicit
-                    )
+                for spec in CandidatePlanner.candidates(for: token, context: context) {
+                    add(spec, token: token, project: project, reason: reason, eligibility: .explicit)
                 }
 
             case let .hashNumber(number), let .bareNumber(number):
@@ -691,8 +685,13 @@ actor TicketEvidencePlanner {
         foreground: ForegroundApplicationContext?,
         history: ApplicationResolutionHistory,
         maximumCandidates: Int = ResolutionPlan.maximumCandidates
-    ) -> ResolutionPlan {
-        EvidenceCandidatePlanner.plan(
+    ) async -> ResolutionPlan {
+        let keys = Set(TokenParser.parse(input).compactMap { token -> String? in
+            if case let .issueKey(project, _) = token.kind { return project }; return nil
+        })
+        await TrackerDiscovery.shared.refreshUnknownProjects(keys)
+        guard !Task.isCancelled else { return ResolutionPlan(proposals: []) }
+        return EvidenceCandidatePlanner.plan(
             input: input,
             context: context,
             pinned: pinned,

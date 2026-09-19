@@ -1,0 +1,32 @@
+name: Capture release visuals
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ['release/**']
+
+permissions:
+  contents: read
+
+jobs:
+  capture:
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Capture and compose on the runner display
+        run: |
+          ./scripts/capture-release-shots.sh
+          swift scripts/render-marketing-shots.swift
+          ./scripts/check-release-consistency.sh
+      - name: Collect this reservation's visuals
+        run: |
+          mkdir -p dist/visuals
+          version=$(cat VERSION)
+          cp docs/screenshots/*-"$version".png dist/visuals/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-visuals
+          path: dist/visuals/*.png
+          if-no-files-found: error

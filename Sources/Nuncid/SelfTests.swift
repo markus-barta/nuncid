@@ -29,6 +29,39 @@ private actor ResolverConcurrencyProbe {
 }
 
 @MainActor enum SelfTests {
+    private static func verifyHeaderDragEvents() {
+        guard let screen = NuncidWindowPlacement.probeScreen ?? NSScreen.main else { return }
+        let origin = CGPoint(x: screen.visibleFrame.midX - 150, y: screen.visibleFrame.midY - 100)
+        let panel = NSPanel(contentRect: CGRect(origin: origin, size: CGSize(width: 300, height: 200)), styleMask: [.borderless], backing: .buffered, defer: false)
+        let view = InspectionWindowDragArea.DragView()
+        panel.contentView = view
+        func event(_ type: NSEvent.EventType, _ location: CGPoint) -> NSEvent {
+            NSEvent.mouseEvent(with: type, location: location, modifierFlags: [], timestamp: 1,
+                              windowNumber: panel.windowNumber, context: nil, eventNumber: 1, clickCount: 1, pressure: 1)!
+        }
+        view.mouseDown(with: event(.leftMouseDown, CGPoint(x: 20, y: 20)))
+        view.mouseDragged(with: event(.leftMouseDragged, CGPoint(x: 80, y: 50)))
+        let moved = panel.frame.origin
+        view.mouseUp(with: event(.leftMouseUp, CGPoint(x: 80, y: 50)))
+        view.mouseDragged(with: event(.leftMouseDragged, CGPoint(x: 100, y: 100)))
+        guard !panel.isVisible, abs(moved.x - origin.x - 60) < 0.1, abs(moved.y - origin.y - 30) < 0.1, panel.frame.origin == moved else {
+            fputs("self-test failed: hidden header drag uses event coordinates and stops on mouse up\n", stderr); exit(1)
+        }
+    }
+
+    private static func verifyTrackerDiscovery() {
+        let finished = DispatchSemaphore(value: 0)
+        let result = SelfTestAsyncResult()
+        Task.detached {
+            let failures = await TrackerDiscoveryChecks.run()
+            if !failures.isEmpty { fputs("tracker discovery: \(failures.joined(separator: "; "))\n", stderr) }
+            result.set(failures.isEmpty); finished.signal()
+        }
+        guard finished.wait(timeout: .now() + 5) == .success, result.get() else {
+            fputs("self-test failed: shared tracker discovery\n", stderr); exit(1)
+        }
+    }
+
     private static func verifyCalendarV2() {
         let valid = ["100101000000.0.0", "260911101807.0.0", "280229235959.0.0", "991231235959.0.0"]
         let invalid = ["090101000000.0.0", "260229120000.0.0", "260431120000.0.0", "260911240000.0.0",
@@ -429,6 +462,16 @@ private actor ResolverConcurrencyProbe {
 
     // Return normally before exit so isolated preference domains are cleaned up.
     private static func run() {
+        verifyHeaderDragEvents()
+        verifyTrackerDiscovery()
+        // Synthetic directory: self-tests never read trackers or depend on the
+        // operator's cached project catalog.
+        TrackerDirectory.shared.replace(connections: TrackerConnection.defaults,
+                                        projects: ProjectDescriptor.presentationHints, persist: false)
+        let directoryFailures = TrackerDirectoryChecks.run()
+        guard directoryFailures.isEmpty else {
+            fputs("self-test failed: tracker directory: \(directoryFailures.joined(separator: "; "))\n", stderr); exit(1)
+        }
         verifyMenuBarIconPresentation()
         verifyMenuBarTargetSelection()
         verifyExploration()

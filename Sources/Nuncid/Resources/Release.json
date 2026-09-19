@@ -1,9 +1,9 @@
 {
   "version_scheme": "inspr-calendar-v2",
-  "version": "260911121955.0.0",
+  "version": "260919094934.0.0",
   "release_channel": "stable",
-  "release_sequence": 30,
-  "bundle_short_version": "2026.911.44396",
+  "release_sequence": 32,
+  "bundle_short_version": "2026.919.35375",
   "last_legacy_version": "26.09.11.10.11.21",
   "first_calendar_version": "260911101807.0.0",
   "first_calendar_sequence": 26,
@@ -14,6 +14,13 @@
       "reason": "Packaged self-test read the macOS compatibility value as the canonical version",
       "source_commit": "46562f9a41f0ed9838e5fc32315a014afee713b0",
       "ci_run": 34055006645
+    },
+    {
+      "version": "260919093937.0.0",
+      "release_sequence": 31,
+      "reason": "Final review preserved case-sensitive profile identity in project navigation; replacement candidate uses a later coordinate",
+      "source_commit": "c97cc1a56a29382974d628963b7de737a29d73b8",
+      "ci_run": 35435611609
     }
   ],
   "legacy_version_scheme": "inspr-calendar-v1",
