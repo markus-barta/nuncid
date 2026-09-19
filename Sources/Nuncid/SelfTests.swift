@@ -462,6 +462,10 @@ private actor ResolverConcurrencyProbe {
 
     // Return normally before exit so isolated preference domains are cleaned up.
     private static func run() {
+        let updateFailures = UpdateChecks.run()
+        guard updateFailures.isEmpty else {
+            fputs("self-test failed: updates: \(updateFailures.joined(separator: "; "))\n", stderr); exit(1)
+        }
         verifyHeaderDragEvents()
         verifyTrackerDiscovery()
         // Synthetic directory: self-tests never read trackers or depend on the

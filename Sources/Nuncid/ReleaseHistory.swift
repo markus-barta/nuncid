@@ -22,6 +22,19 @@ struct ReleaseNote: Identifiable, Equatable {
 enum ReleaseHistory {
     static let notes: [ReleaseNote] = [
         ReleaseNote(
+            version: "260919123400.0.0",
+            isoDate: "2026-09-19",
+            date: "19 September 2026",
+            theme: "Ready when you are",
+            headline: "Updates arrive quietly. Restart when ready.",
+            intro: "Nuncid downloads and verifies new releases in the background, then waits for you to apply them.",
+            items: [
+                ReleaseNoteItem(label: "One short menu action", detail: "Restart to Update appears when a verified update is ready. Your settings carry across to the new version."),
+                ReleaseNoteItem(label: "You control updates", detail: "Turn automatic downloads on or off in Updates settings, check manually, and see update status. No unexpected restart interrupts your work.")
+            ],
+            versionScheme: .calendarV2
+        ),
+        ReleaseNote(
             version: "260919094934.0.0",
             isoDate: "2026-09-19",
             date: "19 September 2026",

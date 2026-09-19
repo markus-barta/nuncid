@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+## [260919123400.0.0] - 2026-09-19
+
+- Download signed updates quietly, control automatic downloads in Settings, and choose **Restart to Update** from the right-click menu once an update is verified (NUNCID-98).
+
 ## [260919094934.0.0] - 2026-09-19
 
 - Discover your Paimos projects and move the popup freely (NUNCID-95)

@@ -5,6 +5,7 @@ cd "$repo_dir"
 swift build -Xswiftc -warnings-as-errors
 "$repo_dir/scripts/check-release-consistency.sh"
 python3 "$repo_dir/scripts/test-release-policy.py"
+python3 "$repo_dir/scripts/test-update-signatures.py"
 task_tmp_dir=$(mktemp -d)
 trap 'rm -rf "$task_tmp_dir"' EXIT
 (

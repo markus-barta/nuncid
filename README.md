@@ -1,9 +1,9 @@
 <p align="center">
-  <img src="docs/screenshots/hero-260919094934.0.0.png" alt="Nuncid — point at a ticket and know what matters" width="100%">
+  <img src="docs/screenshots/hero-260919123400.0.0.png" alt="Nuncid — point at a ticket and know what matters" width="100%">
 </p>
 
 <p align="center">
-  <a href="https://github.com/markus-barta/nuncid/releases/latest"><img src="https://img.shields.io/badge/release-260919094934.0.0-0A84FF?style=flat-square" alt="Latest release 260919094934.0.0"></a>
+  <a href="https://github.com/markus-barta/nuncid/releases/latest"><img src="https://img.shields.io/badge/release-260919123400.0.0-0A84FF?style=flat-square" alt="Latest release 260919123400.0.0"></a>
   <img src="https://img.shields.io/badge/macOS-13%2B-111827?style=flat-square&logo=apple" alt="macOS 13 or newer">
   <img src="https://img.shields.io/badge/Swift-5.10-F05138?style=flat-square&logo=swift&logoColor=white" alt="Swift 5.10">
   <img src="https://img.shields.io/badge/OCR-local-22C55E?style=flat-square" alt="Local OCR">
@@ -29,7 +29,7 @@
 Click Nuncid or use the activation shortcut to toggle **detection ON/OFF**. ON immediately opens an inspection window and keeps it visible. Apple Vision discovers ticket references progressively outward from the pointer over the invoked display. Nearby candidates resolve first through your existing Paimos and GitHub sessions; hovering prioritizes a pending ID and opens its cached card. OFF stops automatic discovery and reads.
 
 <p align="center">
-  <img src="docs/screenshots/workflow-260919094934.0.0.png" alt="Nuncid keeps the current ticket fixed between previous and next results" width="100%">
+  <img src="docs/screenshots/workflow-260919123400.0.0.png" alt="Nuncid keeps the current ticket fixed between previous and next results" width="100%">
 </p>
 
 | Invoke anywhere | Keep context nearby | Navigate without friction |
@@ -53,7 +53,7 @@ Pinned and unpinned windows have exactly the same header and controls. Close is 
 The active source remains emphasized for as long as its card is visible. All candidates are marked during exploration—there is no pinned-only visibility switch. A pending selection shows “Checking…” rather than inventing ticket content.
 
 <p align="center">
-  <img src="docs/screenshots/lookup-highlight-260919094934.0.0.png" alt="Three badge-free detection styles: gray dashes, dark-gray diagonal, and green fill" width="100%">
+  <img src="docs/screenshots/lookup-highlight-260919123400.0.0.png" alt="Three badge-free detection styles: gray dashes, dark-gray diagonal, and green fill" width="100%">
 </p>
 
 Markers ignore mouse input, do not animate, and remain excluded from screen capture. Source scrolling or Space changes invalidate stale coordinates immediately. After a short settling delay, Nuncid rediscovers visible IDs and reanchors their markers while keeping the card and cached results. **Refresh when source window changes** in Detection settings is off by default, including after upgrades: changing terminal/TUI window titles no longer repeatedly restart discovery. Enable it to rescan on source-window changes, or toggle detection off and on for a fresh scan. Off-screen IDs lose only their outline after refresh.
@@ -67,7 +67,7 @@ Detection settings expose the shortcut, **hover delay (default 100 ms, 0–500 m
 **Detection Frames** settings configure each state's outline color/opacity and fill color/opacity. Strike-through is available **only for no-match results**, with its own on/off toggle, color, and opacity. Pending/checking and verified matches never have a diagonal, even if older saved settings enabled one. Changes update visible markers immediately—without OCR or tracker requests. A local preview shows normal/selected frames; reset one state or all marker styles without resetting other preferences.
 
 <p align="center">
-  <img src="docs/screenshots/settings-markers-260919094934.0.0.png" alt="Detection frame colors, opacity, and independent diagonal strike-through settings" width="100%">
+  <img src="docs/screenshots/settings-markers-260919123400.0.0.png" alt="Detection frame colors, opacity, and independent diagonal strike-through settings" width="100%">
 </p>
 
 | Idle | Exploring | Ticket found |
@@ -75,14 +75,14 @@ Detection settings expose the shortcut, **hover delay (default 100 ms, 0–500 m
 | <img src="docs/screenshots/menu-hover-off-0.3.2.png" alt="Dimmed Nuncid menu bar icon: hover is off" width="40"> | <img src="docs/screenshots/menu-hover-on-0.3.2.png" alt="Filled viewfinder menu bar icon: hover is on" width="40"> | <img src="docs/screenshots/menu-ticket-found-0.3.2.png" alt="Checkmark menu bar icon: ticket found" width="40"> |
 
 <p align="center">
-  <img src="docs/screenshots/settings-showcase-260919094934.0.0.png" alt="Nuncid activation and spatial card appearance settings" width="100%">
+  <img src="docs/screenshots/settings-showcase-260919123400.0.0.png" alt="Nuncid activation and spatial card appearance settings" width="100%">
 </p>
 
 Nuncid can show zero to six neighboring destinations and offers four text sizes, three presets plus a remembered Custom size, three content densities, and system or solid surfaces. These appearance settings define the **100% baseline**. The header’s **− / percentage / +** controls independently remember **30–300% zoom**, in 10-percentage-point steps; click the percentage to reset to 100%. Content, icons and spacing magnify together. The header stays at native size so controls remain usable at 30%. The window cannot exceed its current display’s usable area; oversized content scrolls horizontally and vertically using native macOS behavior. Dragging/resizing and changing displays do not bake zoom into the saved baseline.
 
 <p align="center">
-  <img src="docs/screenshots/inspection-zoom30-260919094934.0.0.png" alt="30% magnified content with a comfortably usable native-size header" width="28%">
-  <img src="docs/screenshots/inspection-zoom300-260919094934.0.0.png" alt="300% content magnification constrained to the screen, with native scrolling" width="68%">
+  <img src="docs/screenshots/inspection-zoom30-260919123400.0.0.png" alt="30% magnified content with a comfortably usable native-size header" width="28%">
+  <img src="docs/screenshots/inspection-zoom300-260919123400.0.0.png" alt="300% content magnification constrained to the screen, with native scrolling" width="68%">
 </p>
 
 ## Screen Recording setup
@@ -101,16 +101,30 @@ restart; settings and the installed app identity are preserved. A failed restart
 preparation leaves the current app open with an explanation.
 
 <p align="center">
-  <img src="docs/screenshots/permission-guide-260919094934.0.0.png" alt="Three steps to enable Screen Recording: open settings, drag Nuncid, restart" width="65%">
-  <img src="docs/screenshots/permission-helper-260919094934.0.0.png" alt="Compact Nuncid app drag source beside System Settings" width="33%">
+  <img src="docs/screenshots/permission-guide-260919123400.0.0.png" alt="Three steps to enable Screen Recording: open settings, drag Nuncid, restart" width="65%">
+  <img src="docs/screenshots/permission-helper-260919123400.0.0.png" alt="Compact Nuncid app drag source beside System Settings" width="33%">
 </p>
+
+## Quiet updates
+
+Open **Settings → Updates** to enable or disable **Download updates automatically**
+(default on), see the installed/latest version, or check manually. Checks run daily.
+The right-click menu shows **Downloading Update…**, then **Restart to Update** only
+once Sparkle has verified and staged the update. Click it to apply and relaunch;
+Nuncid never restarts automatically. A ready update can also install when you quit.
+Settings and shortcuts stay intact. Failed downloads can be retried from the same menu.
+
+The feed and archives require Ed25519 signatures. Update requests contact GitHub;
+no screenshots, OCR, ticket content, or system profiles are sent. Source builds,
+read-only copies, translocated apps and package-manager installations explain why
+self-updating is unavailable. Install the packaged app into Applications to use updates.
 
 ## What changed—and why it feels better
 
 The app’s **Version History** explains each release in concise, positive human language. Open it from the menu, About window, or by clicking the version in Settings; your running version is always highlighted.
 
 <p align="center">
-  <img src="docs/screenshots/version-history-260919094934.0.0.png" alt="Nuncid Version History with the current release highlighted and benefit-led notes" width="100%">
+  <img src="docs/screenshots/version-history-260919123400.0.0.png" alt="Nuncid Version History with the current release highlighted and benefit-led notes" width="100%">
 </p>
 
 ## Smarter resolution, fewer wrong guesses
@@ -138,7 +152,7 @@ revisits may refresh them, without background polling. Run/PR/repository cache
 identities are distinct. Pasted scoped PR/run commands and URLs use the same classification rules; pictured commands are never executed.
 
 <p align="center">
-  <img src="docs/screenshots/workflow-run-260919094934.0.0.png" alt="GitHub workflow run summary with status, branch, commit, duration and link" width="70%">
+  <img src="docs/screenshots/workflow-run-260919123400.0.0.png" alt="GitHub workflow run summary with status, branch, commit, duration and link" width="70%">
 </p>
 
 Automatic discovery no longer uses global project history to turn unrelated numbers into tickets. Intentional pinned number/project entry remains available separately, and Nuncid never fabricates a “maybe” result.
@@ -318,23 +332,39 @@ artifact into `docs/screenshots` and review those images before sealing a candid
 swift scripts/render-marketing-shots.swift
 ./scripts/test.sh
 # Review and commit the complete source/visual tree before sealing a candidate.
-./scripts/package-release.sh
-./scripts/verify-release.sh
+# Dispatch the protected release-signing workflow for archive/feed signing.
+./scripts/package-app.sh release
 ```
 
-Release PRs build the exact PR head and retain the verified ZIP, checksum, and
-manifest as the `nuncid-release-candidate` Actions artifact. **Promote those exact
-bytes**, rather than rebuilding after merge. Tag the manifest's source commit
-once it is merged; verify that its source tree matches the merged tree. Main
-branch CI runs the tests without producing a second candidate. A changed sealed
-candidate requires a new coordinate; do not rerun packaging under its old one.
-Local packaging above is for a reservation that has not already been sealed by CI.
+Release PRs test and verify a portable app without receiving signing secrets.
+After the exact source passes the recorded review gate and CI, dispatch **Seal
+reviewed release candidate** with that full source SHA on the same workflow ref.
+The workflow signs the archive and feed, verifies both with the committed public
+key, and retains the ZIP, checksum, appcast and manifest as
+`nuncid-release-candidate`. **Promote those exact bytes**, rather than rebuilding.
+Tag the manifest's source commit once merged; verify the merged source tree matches.
+A changed sealed candidate requires a new coordinate; do not rerun packaging under
+its old one. Failed candidate bytes must also be preserved for audit.
+
+The dedicated machine-owned Ed25519 key is retained by the owner in restricted
+local storage pending owner-managed archival. Its CI delivery copy
+is the `release-signing` **environment** secret `NUNCID_SPARKLE_PRIVATE_KEY`,
+never a repository secret. Configure that environment with the repository owner
+as required reviewer and allow deployments from `main` only. The single maintainer
+may approve a run they dispatched; no other branch may access the environment.
+The signing job waits for that approval; its key is supplied only to the feed-signing
+step, after the app and archive have been built without it. `scripts/update-feed.json` contains the
+public key and HTTPS feed URL. Never put the private key in command arguments,
+tracked files, PR workflows or logs. Signing helpers pass it directly over stdin.
+`python3 scripts/update-feed.py verify` verifies a candidate using its archive,
+feed, committed release metadata and public key; no private key or Keychain access
+is required. Its trust-root check reads the plist inside the signed archive.
 
 Every release uses a long UTC coordinate. Reservation rejects same-second,
 older, and already-used coordinates. Packaging never overwrites an archive or
 release-set manifest. A changed release artifact requires a later reservation;
 an identical artifact is reused by its verified digest, not silently rebuilt.
-Publish the ZIP, SHA-256 file and release-set JSON together, with the metadata
+Publish the ZIP, SHA-256 file, signed `appcast.xml` and release-set JSON together, with the metadata
 block emitted by `python3 scripts/release-policy.py metadata` in the release body.
 
 For rollback, download the previous published ZIP and immutable release-set
@@ -354,14 +384,18 @@ The capture script opens DEBUG-only visual probes long enough to save the curren
 
 Developer ID distribution is opt-in and requires credentials already stored in your macOS keychain. Apple requires Developer ID, hardened runtime, a secure timestamp, notarization, and a stapled ticket for the trusted distribution path; see [Apple’s notarization guidance](https://developer.apple.com/documentation/security/notarizing-macos-software-before-distribution).
 
+The current protected workflow produces ad-hoc signed apps with Ed25519-signed
+updates. It has no Apple signing/notarization credentials configured and does not
+produce notarized releases. Enabling that path requires separate credential
+authorization and release-workflow configuration.
+
 ```sh
 NUNCID_SIGNING_IDENTITY='Developer ID Application: Example (TEAMID)' \
-NUNCID_NOTARY_PROFILE='nuncid-notary' \
-./scripts/package-release.sh
-NUNCID_EXPECT_NOTARIZED=1 ./scripts/verify-release.sh
+./scripts/package-app.sh release
+# Archive/feed signing remains in the protected release workflow.
 ```
 
-Without those variables, packaging remains deliberately local/ad-hoc and verification says so. CI uses that credential-free path and retains verified candidates, but never publishes a GitHub Release. Complete Swift strict-concurrency checking is reserved for the Swift 6 migration; 1.0 remains in Swift 5 language mode and treats all warnings in its supported build mode as errors.
+Without those variables, packaging remains deliberately local/ad-hoc and verification says so. PR CI uses that credential-free app-signing path. Release candidates additionally require the separate Ed25519 update-signing key; that does not imply Apple notarization. CI never publishes a GitHub Release. Complete Swift strict-concurrency checking is reserved for the Swift 6 migration; 1.0 remains in Swift 5 language mode and treats all warnings in its supported build mode as errors.
 
 ## Project map
 

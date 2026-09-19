@@ -100,6 +100,7 @@ import SwiftUI
     @Published var inspectHotKey: HotKey? { didSet { NuncidPreferences.save(inspectHotKey, key: "inspectHotKey"); configureHotKeys() } }
     @Published var pinHotKey: HotKey? { didSet { NuncidPreferences.save(pinHotKey, key: "pinHotKey"); configureHotKeys() } }
     @Published var hotKeyError: String?
+    let updater = AppUpdater()
     let permissionFlow = ScreenRecordingPermissionFlow()
     var canDetect: Bool { screenRecordingGranted && !permissionFlow.needsGuidance }
     @Published var screenRecordingGranted: Bool {
@@ -434,6 +435,7 @@ import SwiftUI
     func applicationDidFinishLaunching(_ notification: Notification) {
         if CommandLine.arguments.contains("--self-test") { SelfTests.runAndExit() }
 #if DEBUG
+        if UpdateIntegrationProbe.startIfRequested() { return }
         if CommandLine.arguments.contains("--menu-click-routing-probe") {
             MenuBarClickRoutingProbe.runAndExit()
         }
@@ -889,7 +891,7 @@ private struct ShortcutRecorder: NSViewRepresentable {
 }
 
 private enum SettingsPane: String, CaseIterable, Identifiable {
-    case scanning, markers, pinned, appearance, trackers, privacy
+    case scanning, markers, pinned, appearance, trackers, updates, privacy
 
     var id: String { rawValue }
     var title: String {
@@ -899,6 +901,7 @@ private enum SettingsPane: String, CaseIterable, Identifiable {
         case .pinned: return "Pinned Card"
         case .appearance: return "Appearance"
         case .trackers: return "Trackers"
+        case .updates: return "Updates"
         case .privacy: return "Privacy"
         }
     }
@@ -909,6 +912,7 @@ private enum SettingsPane: String, CaseIterable, Identifiable {
         case .pinned: return "pin"
         case .appearance: return "paintbrush"
         case .trackers: return "server.rack"
+        case .updates: return "arrow.down.circle"
         case .privacy: return "hand.raised"
         }
     }
@@ -932,6 +936,7 @@ struct SettingsView: View {
         if CommandLine.arguments.contains("--settings-appearance-probe") { _selection = State(initialValue: .appearance) }
         else if CommandLine.arguments.contains("--settings-pinned-probe") { _selection = State(initialValue: .pinned) }
         else if CommandLine.arguments.contains("--settings-markers-probe") { _selection = State(initialValue: .markers) }
+        else if CommandLine.arguments.contains("--settings-updates-probe") { _selection = State(initialValue: .updates) }
         else if CommandLine.arguments.contains("--settings-trackers-probe") { _selection = State(initialValue: .trackers) }
 #endif
     }
@@ -1008,6 +1013,7 @@ struct SettingsView: View {
         case .pinned: pinnedPage
         case .appearance: appearancePage
         case .trackers: trackersPage
+        case .updates: UpdateSettingsPage(updater: state.updater)
         case .privacy: privacyPage
         }
     }
@@ -1451,5 +1457,44 @@ private struct AboutView: View {
         application.setActivationPolicy(.accessory)
         application.delegate = delegate
         withExtendedLifetime(delegate) { application.run() }
+    }
+}
+
+struct UpdateSettingsPage: View {
+    @ObservedObject var updater: AppUpdater
+
+    var body: some View {
+        SettingsPage(title: "Updates", subtitle: "Download quietly. Restart when you are ready.") {
+            SettingsCard {
+                Toggle("Download updates automatically", isOn: $updater.automaticallyDownloads)
+                    .disabled(!updater.available)
+                Text("Check daily and download verified updates in the background. Nuncid never restarts automatically. A ready update may install when you quit.")
+                    .font(.callout).foregroundStyle(.secondary)
+            }
+            SettingsCard {
+                HStack {
+                    Text("Installed version")
+                    Spacer()
+                    VersionText(version: NuncidBrand.version, scheme: NuncidBrand.versionScheme, size: 12)
+                }
+                if let version = updater.latestVersion {
+                    HStack {
+                        Text("Latest version")
+                        Spacer()
+                        VersionText(version: version, scheme: .calendarV2, size: 12)
+                    }
+                }
+                Divider()
+                Label(updater.state.title, systemImage: updater.state == .ready ? "checkmark.seal" : "arrow.down.circle")
+                    .font(.headline)
+                Text(updater.detail).font(.callout).foregroundStyle(.secondary)
+                Button(updater.state == .ready ? "Restart to Update" : "Check for Updates…") { updater.performAction() }
+                    .disabled(!updater.canAct)
+            }
+            SettingsCard {
+                Text("Update checks contact GitHub for the release feed and download. Screen contents, ticket data, and system profiles are never sent.")
+                    .font(.callout).foregroundStyle(.secondary)
+            }
+        }
     }
 }

@@ -1,0 +1,69 @@
+name: Seal reviewed release candidate
+
+on:
+  workflow_dispatch:
+    inputs:
+      reviewed_commit:
+        description: Full commit SHA with recorded review approval
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: seal-nuncid-release
+  cancel-in-progress: false
+
+jobs:
+  seal:
+    runs-on: macos-26
+    environment: release-signing
+    steps:
+      - name: Require the exact reviewed workflow and source
+        env:
+          REVIEWED_COMMIT: ${{ inputs.reviewed_commit }}
+        run: |
+          [[ "$REVIEWED_COMMIT" =~ ^[a-f0-9]{40}$ ]]
+          [[ "$REVIEWED_COMMIT" == "$GITHUB_SHA" ]]
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Build and test reviewed sources
+        run: ./scripts/test.sh
+      - name: Prevent repackaging a published reservation
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version=$(cat VERSION)
+          gh api repos/markus-barta/nuncid/releases --paginate --jq '.[].tag_name' > .build/published-tags
+          if grep -Fxq "v$version" .build/published-tags; then
+            echo 'Published coordinate already exists; promote existing bytes or reserve a later version.' >&2
+            exit 1
+          fi
+      - name: Package once without signing-secret access
+        id: package
+        run: ./scripts/package-release.sh --prepare
+      - name: Sign exact archive and feed
+        id: sign
+        env:
+          NUNCID_SPARKLE_PRIVATE_KEY: ${{ secrets.NUNCID_SPARKLE_PRIVATE_KEY }}
+        run: python3 scripts/update-feed.py create
+      - name: Seal release manifest without signing-secret access
+        run: python3 scripts/release-policy.py manifest
+      - name: Verify exact candidate with the public key
+        id: verify
+        run: ./scripts/verify-release.sh
+      - name: Preserve immutable candidate and failure evidence
+        if: always() && steps.package.outcome != 'skipped'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.verify.outcome == 'success' && 'nuncid-release-candidate' || 'nuncid-failed-candidate' }}
+          path: |
+            dist/Nuncid-*.zip
+            dist/Nuncid-*.sha256
+            dist/Nuncid-*.release-set.json
+            dist/appcast.xml
+          if-no-files-found: ignore
+          retention-days: 30

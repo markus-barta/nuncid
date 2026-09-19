@@ -8,9 +8,18 @@ temporary_archive="$repo_dir/dist/.Nuncid-$version.$$.zip"
 notary_profile=${NUNCID_NOTARY_PROFILE:-}
 signing_identity=${NUNCID_SIGNING_IDENTITY:--}
 
+[[ "${1:-}" == --prepare ]] || {
+  print -u2 'Use the protected release-signing workflow. --prepare creates the archive without accessing update-signing keys.'
+  exit 1
+}
+[[ -z "${NUNCID_SPARKLE_PRIVATE_KEY:-}" ]] || {
+  print -u2 'Do not supply update-signing keys to the packaging step.'
+  exit 1
+}
 trap 'rm -f "$temporary_archive"' EXIT
 python3 "$repo_dir/scripts/release-policy.py" validate >/dev/null
-[[ ! -e "$archive" && ! -e "$repo_dir/dist/Nuncid-$version.release-set.json" && ! -e "$repo_dir/dist/Nuncid-$version.sha256" ]] || {
+python3 "$repo_dir/scripts/update-feed.py" config
+[[ ! -e "$archive" && ! -e "$repo_dir/dist/appcast.xml" && ! -e "$repo_dir/dist/Nuncid-$version.release-set.json" && ! -e "$repo_dir/dist/Nuncid-$version.sha256" ]] || {
   print -u2 'This artifact coordinate already exists. Verify/reuse its exact bytes, or reserve a later calendar coordinate.'
   exit 1
 }
@@ -34,5 +43,4 @@ if [[ -n "$notary_profile" ]]; then
 fi
 # No clobber, even if a second packager raced the initial collision check.
 ln "$temporary_archive" "$archive" || { print -u2 'Artifact reservation collision.'; exit 1; }
-python3 "$repo_dir/scripts/release-policy.py" manifest
 echo "$archive"
