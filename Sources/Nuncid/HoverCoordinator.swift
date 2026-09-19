@@ -764,7 +764,7 @@ enum LookupHighlightVisibilityPolicy {
             overlay.setInput("Type a ticket number first"); return
         }
         let projects = ProjectDescriptor.selectable
-        let tracker = overlay.selectedLine.flatMap { Tracker(rawValue: $0.source.lowercased()) }
+        let tracker = overlay.selectedLine.flatMap { Tracker(rawValue: $0.source) }
         guard let next = ProjectMatcher.cycle(direction, projects: projects, current: currentProject, tracker: tracker) else {
             overlay.setInput("No projects available. Refresh projects in Trackers settings."); return
         }
