@@ -30,7 +30,7 @@ enum ReleaseHistory {
             intro: "Nuncid downloads and verifies new releases in the background, then waits for you to apply them.",
             items: [
                 ReleaseNoteItem(label: "One short menu action", detail: "Restart to Update appears when a verified update is ready. Your settings carry across to the new version."),
-                ReleaseNoteItem(label: "You control updates", detail: "Turn automatic downloads on or off in Updates settings, check manually, and see download progress. No unexpected restart interrupts your work.")
+                ReleaseNoteItem(label: "You control updates", detail: "Turn automatic downloads on or off in Updates settings, check manually, and see update status. No unexpected restart interrupts your work.")
             ],
             versionScheme: .calendarV2
         ),
