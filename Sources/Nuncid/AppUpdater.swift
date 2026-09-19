@@ -3,7 +3,7 @@ import Combine
 import Sparkle
 
 enum DownloadUpdateState: Equatable {
-    case idle, checking, downloading, verifying, ready, installing, current, failed, unavailable
+    case idle, checking, downloading, verifying, ready, installing, current, checkFailed, failed, unavailable
 
     var title: String {
         switch self {
@@ -14,6 +14,7 @@ enum DownloadUpdateState: Equatable {
         case .ready: return "Restart to Update"
         case .installing: return "Restarting…"
         case .current: return "Nuncid is up to date"
+        case .checkFailed: return "Retry Update Check"
         case .failed: return "Retry Update"
         case .unavailable: return "Updates unavailable"
         }
@@ -80,6 +81,7 @@ enum SignedUpdatePolicy {
     private var installReply: ((SPUUserUpdateChoice) -> Void)?
     private var restartRequested = false
     private var userRequestedCheck = false
+    private(set) var lastFailureWasSignatureValidation = false
 #if DEBUG
     private var integrationProbe = false
     private var settingsPreview = false
@@ -122,7 +124,9 @@ enum SignedUpdatePolicy {
             return
         }
 #endif
-        guard startingUpdater, !CommandLine.arguments.contains(where: { $0.contains("probe") || $0.contains("self-test") }) else {
+        guard startingUpdater, !CommandLine.arguments.dropFirst().contains(where: {
+            $0.hasPrefix("--") && ($0.hasSuffix("-probe") || $0.hasSuffix("-self-test") || $0 == "--self-test")
+        }) else {
             state = .unavailable
             detail = "Updates are disabled in test runs."
             return
@@ -194,11 +198,15 @@ enum SignedUpdatePolicy {
         if (error as NSError).domain != SUSparkleErrorDomain || (error as NSError).code != SUError.noUpdateError.rawValue { fail(error) }
     }
     func updaterDidNotFindUpdate(_ updater: SPUUpdater, error: Error) {
-        state = .current; detail = "No compatible newer update was found."
+        if state != .ready { state = .current; detail = "No compatible newer update was found." }
     }
     func updater(_ updater: SPUUpdater, didFinishUpdateCycleFor updateCheck: SPUUpdateCheck, error: Error?) {
-        userRequestedCheck = false
-        restartRequested = false
+        // A background cycle finishing must not erase a user's pending request
+        // to resume its staged update in a new foreground cycle.
+        if updateCheck == .updates {
+            userRequestedCheck = false
+            restartRequested = false
+        }
     }
     func updater(_ updater: SPUUpdater, shouldDownloadReleaseNotesForUpdate item: SUAppcastItem) -> Bool { false }
 
@@ -225,7 +233,8 @@ enum SignedUpdatePolicy {
     func showUpdateReleaseNotes(with downloadData: SPUDownloadData) {}
     func showUpdateReleaseNotesFailedToDownloadWithError(_ error: Error) {}
     func showUpdateNotFoundWithError(_ error: Error, acknowledgement: @escaping () -> Void) {
-        state = .current; detail = "No compatible newer update was found."; acknowledgement()
+        if state != .ready { state = .current; detail = "No compatible newer update was found." }
+        acknowledgement()
     }
     func showUpdaterError(_ error: Error, acknowledgement: @escaping () -> Void) { fail(error); acknowledgement() }
     func showDownloadInitiated(cancellation: @escaping () -> Void) { state = .downloading }
@@ -248,10 +257,34 @@ enum SignedUpdatePolicy {
     func dismissUpdateInstallation() { installReply = nil }
     func showUpdateInFocus() {}
 
-    private func fail(_ error: Error) {
+    func fail(_ error: Error) {
+        let failure = error as NSError
+        let checkFailure = failure.domain == NSURLErrorDomain
+            || (failure.domain == SUSparkleErrorDomain
+                && [Int(SUError.appcastError.rawValue), Int(SUError.appcastParseError.rawValue)].contains(failure.code))
+            || failure.domain == "Nuncid.Updates"
+        if checkFailure && ![.downloading, .verifying, .installing].contains(state) {
+            // A failed feed refresh does not invalidate Sparkle's staged update.
+            if state == .ready { return }
+            if userRequestedCheck || state == .checking {
+                state = .checkFailed
+                detail = "Could not check for updates. Try again when you are online."
+            }
+            // Quiet scheduled checks leave the prior status alone when offline.
+            return
+        }
+        var cause: NSError? = failure
+        lastFailureWasSignatureValidation = false
+        for _ in 0..<8 {
+            guard let current = cause else { break }
+            if current.domain == SUSparkleErrorDomain && current.code == SUError.signatureError.rawValue {
+                lastFailureWasSignatureValidation = true
+            }
+            cause = current.userInfo[NSUnderlyingErrorKey] as? NSError
+        }
         installReply = nil
         restartRequested = false
         state = .failed
-        detail = "The update could not be completed. Your installed app is unchanged. Try again."
+        detail = "The update could not be completed. Try again."
     }
 }

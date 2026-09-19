@@ -9,6 +9,7 @@ import plistlib
 import subprocess
 import sys
 import xml.etree.ElementTree as ET
+import zipfile
 
 ROOT = Path(__file__).resolve().parent.parent
 SPARKLE = "http://www.andymatuschak.org/xml-namespaces/sparkle"
@@ -56,9 +57,15 @@ def sign(path):
 
 def archive_info(record):
     archive = ROOT / "dist" / f'Nuncid-{record["version"]}.zip'
-    plist = plistlib.loads((ROOT / "dist/Nuncid.app/Contents/Info.plist").read_bytes())
-    if plist["NuncidCanonicalVersion"] != record["version"]:
-        raise ValueError("Packaged version mismatch")
+    with zipfile.ZipFile(archive) as packaged:
+        plist = plistlib.loads(packaged.read("Nuncid.app/Contents/Info.plist"))
+    for field, value in {"NuncidCanonicalVersion": record["version"],
+                         "NuncidVersionScheme": record["version_scheme"],
+                         "NuncidReleaseSequence": record["release_sequence"],
+                         "NuncidReleaseChannel": record["release_channel"],
+                         "CFBundleShortVersionString": record["bundle_short_version"]}.items():
+        if plist.get(field) != value:
+            raise ValueError("Packaged release identity mismatch")
     return archive, plist
 
 
@@ -114,7 +121,7 @@ def verify(settings=None):
         raise ValueError("Appcast archive mismatch")
     if item.findtext(f"{{{SPARKLE}}}version") != plist["CFBundleVersion"] or item.findtext(f"{{{SPARKLE}}}shortVersionString") != record["version"]:
         raise ValueError("Appcast version mismatch")
-    if plist.get("SUPublicEDKey") != settings["public_ed_key"] or not plist.get("SURequireSignedFeed") or not plist.get("SUVerifyUpdateBeforeExtraction"):
+    if plist.get("SUPublicEDKey") != settings["public_ed_key"] or plist.get("SUFeedURL") != settings["feed_url"] or not plist.get("SURequireSignedFeed") or not plist.get("SUVerifyUpdateBeforeExtraction"):
         raise ValueError("Installed trust root mismatch")
     verify_signature(tool, "archive", archive, settings["public_ed_key"], enclosure.get(f"{{{SPARKLE}}}edSignature"))
 

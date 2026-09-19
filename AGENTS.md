@@ -40,7 +40,9 @@ it vendors the public doctrine only. The private operator pack
 ```sh
 ./scripts/test.sh                                  # build, self-tests, versioning regression
 ./scripts/check-release-consistency.sh             # README, changelog, history, visual parity
-./scripts/package-release.sh && ./scripts/verify-release.sh   # release gates
+./scripts/package-app.sh release                   # portable app/signature gate (no update key)
+# Final archive/feed signing and verify-release.sh run in the protected
+# release-signing workflow after review; production update keys never enter PR CI.
 ```
 
 - Swift 5.10 toolchain, macOS 13+; 1.0 remains in Swift 5 language mode and

@@ -57,6 +57,19 @@ import Sparkle
         driver.dismissUpdateInstallation()
         expect(!driver.canAct, "dismissed session cannot invoke stale callback")
         expect(!DownloadUpdateState.failed.busy, "failure permits retry on active updater")
+        let offlineDriver = AppUpdater(startingUpdater: false, defaults: defaults)
+        offlineDriver.showUpdateNotFoundWithError(NSError(domain: SUSparkleErrorDomain, code: 1001), acknowledgement: {})
+        offlineDriver.fail(NSError(domain: NSURLErrorDomain, code: NSURLErrorNotConnectedToInternet))
+        expect(offlineDriver.state == .current, "offline scheduled check preserves prior status")
+        offlineDriver.showUserInitiatedUpdateCheck(cancellation: {})
+        offlineDriver.fail(NSError(domain: NSURLErrorDomain, code: NSURLErrorNotConnectedToInternet))
+        expect(offlineDriver.state == .checkFailed, "manual offline check reports check failure")
+        offlineDriver.showReady(toInstallAndRelaunch: { _ in installs += 1 })
+        offlineDriver.fail(NSError(domain: SUSparkleErrorDomain, code: Int(SUError.appcastError.rawValue)))
+        expect(offlineDriver.state == .ready && offlineDriver.canAct, "feed failure preserves verified staged update")
+        offlineDriver.fail(NSError(domain: SUSparkleErrorDomain, code: Int(SUError.signatureError.rawValue)))
+        expect(offlineDriver.state == .failed && !offlineDriver.canAct && offlineDriver.lastFailureWasSignatureValidation,
+               "signature rejection invalidates readiness and identifies validation failure")
         return failures
     }
 }

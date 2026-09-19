@@ -18,6 +18,7 @@ concurrency:
 jobs:
   seal:
     runs-on: macos-26
+    environment: release-signing
     steps:
       - name: Require the exact reviewed workflow and source
         env:
@@ -41,11 +42,16 @@ jobs:
             echo 'Published coordinate already exists; promote existing bytes or reserve a later version.' >&2
             exit 1
           fi
-      - name: Package and sign once
+      - name: Package once without signing-secret access
         id: package
+        run: ./scripts/package-release.sh --prepare
+      - name: Sign exact archive and seal release manifest
+        id: sign
         env:
           NUNCID_SPARKLE_PRIVATE_KEY: ${{ secrets.NUNCID_SPARKLE_PRIVATE_KEY }}
-        run: ./scripts/package-release.sh
+        run: |
+          python3 scripts/update-feed.py create
+          python3 scripts/release-policy.py manifest
       - name: Verify exact candidate with the public key
         id: verify
         run: ./scripts/verify-release.sh

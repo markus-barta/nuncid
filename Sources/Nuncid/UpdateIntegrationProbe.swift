@@ -36,8 +36,9 @@ import Combine
                     driver.performAction()
                 }
             } else if state == .failed {
-                record(expectsFailure ? "rejected;installed-app-preserved" : "unexpected-failure")
-                Darwin.exit(expectsFailure ? 0 : 1)
+                let correctRejection = expectsFailure && driver.lastFailureWasSignatureValidation
+                record(correctRejection ? "rejected;installed-app-preserved" : "unexpected-failure")
+                Darwin.exit(correctRejection ? 0 : 1)
             }
         }
         do { try driver.startIntegrationProbe() }

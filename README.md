@@ -332,8 +332,8 @@ artifact into `docs/screenshots` and review those images before sealing a candid
 swift scripts/render-marketing-shots.swift
 ./scripts/test.sh
 # Review and commit the complete source/visual tree before sealing a candidate.
-./scripts/package-release.sh
-./scripts/verify-release.sh
+# Dispatch the protected release-signing workflow for archive/feed signing.
+./scripts/package-app.sh release
 ```
 
 Release PRs test and verify a portable app without receiving signing secrets.
@@ -347,11 +347,17 @@ A changed sealed candidate requires a new coordinate; do not rerun packaging und
 its old one. Failed candidate bytes must also be preserved for audit.
 
 The dedicated machine-owned Ed25519 key belongs in 1Password. Its CI delivery copy
-is the repository secret `NUNCID_SPARKLE_PRIVATE_KEY`; only the manually dispatched,
-reviewed release workflow receives it. `scripts/update-feed.json` contains the
+is the `release-signing` **environment** secret `NUNCID_SPARKLE_PRIVATE_KEY`,
+never a repository secret. Configure that environment with the repository owner
+as required reviewer and allow deployments from `main` only. The single maintainer
+may approve a run they dispatched; no other branch may access the environment.
+The signing job waits for that approval; its key is supplied only to the feed-signing
+step, after the app and archive have been built without it. `scripts/update-feed.json` contains the
 public key and HTTPS feed URL. Never put the private key in command arguments,
 tracked files, PR workflows or logs. Signing helpers pass it directly over stdin.
-`python3 scripts/update-feed.py verify` needs only the public key.
+`python3 scripts/update-feed.py verify` verifies a candidate using its archive,
+feed, committed release metadata and public key; no private key or Keychain access
+is required. Its trust-root check reads the plist inside the signed archive.
 
 Every release uses a long UTC coordinate. Reservation rejects same-second,
 older, and already-used coordinates. Packaging never overwrites an archive or
@@ -379,9 +385,8 @@ Developer ID distribution is opt-in and requires credentials already stored in y
 
 ```sh
 NUNCID_SIGNING_IDENTITY='Developer ID Application: Example (TEAMID)' \
-NUNCID_NOTARY_PROFILE='nuncid-notary' \
-./scripts/package-release.sh
-NUNCID_EXPECT_NOTARIZED=1 ./scripts/verify-release.sh
+./scripts/package-app.sh release
+# Archive/feed signing remains in the protected release workflow.
 ```
 
 Without those variables, packaging remains deliberately local/ad-hoc and verification says so. PR CI uses that credential-free app-signing path. Release candidates additionally require the separate Ed25519 update-signing key; that does not imply Apple notarization. CI never publishes a GitHub Release. Complete Swift strict-concurrency checking is reserved for the Swift 6 migration; 1.0 remains in Swift 5 language mode and treats all warnings in its supported build mode as errors.
