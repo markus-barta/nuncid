@@ -262,7 +262,9 @@ private final class ExplorationMarkerView: NSView {
         overlay.prepareExplorationNavigation(direction)
         DispatchQueue.main.asyncAfter(deadline: .now() + SpatialRailTransitionPolicy.directionLeadTime) { [weak self] in
             guard let self, isActive, generation == sessionGeneration, presentation == presentationGeneration, selected == previous else { return }
-            selectedBounds = occurrences.first { $0.jobID == next }?.anchor.bounds
+            selectedBounds = occurrences.filter { $0.jobID == next }.min {
+                ExplorationPolicy.distance($0.anchor.bounds, to: self.focus) < ExplorationPolicy.distance($1.anchor.bounds, to: self.focus)
+            }?.anchor.bounds
             select(next, retry: includeMisses, near: focus)
         }
         return true
@@ -530,8 +532,8 @@ private final class ExplorationMarkerView: NSView {
             markerSurfaces[display.id] = surface
             surface.panel.setFrame(display.frame, display: false)
             surface.view.markers = occurrences.compactMap { occurrence in
-                guard let job = jobs[occurrence.jobID], !overOwnWindow(occurrence.anchor.bounds),
-                      let localBounds = ExplorationPolicy.localMarker(occurrence.anchor.bounds, on: display.frame),
+                guard let localBounds = ExplorationPolicy.localMarker(occurrence.anchor.bounds, on: display.frame),
+                      let job = jobs[occurrence.jobID], !overOwnWindow(occurrence.anchor.bounds),
                       automaticEnabled || (overlay.isVisible && occurrence.anchor.id == selectedOccurrence?.anchor.id) else { return nil }
                 return (localBounds, job.outcome, occurrence.anchor.id == selectedOccurrence?.anchor.id && overlay.isVisible)
             }
@@ -551,14 +553,17 @@ private final class ExplorationMarkerView: NSView {
         let session = ExplorationSession(ocr: ScreenOCR(), resolver: resolver, planner: TicketEvidencePlanner(), overlay: overlay)
         session.isActive = true; session.automaticEnabled = true
         let frame = NuncidWindowPlacement.probeScreen?.frame ?? NSScreen.main?.frame ?? CGRect(x: 0, y: 0, width: 1000, height: 800)
-        session.displays = [ExplorationDisplay(id: 1, frame: frame, content: frame, quartzBounds: frame)]
+        // Both synthetic displays stay inside the chosen probe screen. Offset and
+        // negative desktop geometry is covered without windows in ExplorationDisplayChecks.
+        let firstFrame = CGRect(x: frame.minX, y: frame.minY, width: frame.width / 2, height: frame.height)
+        session.displays = [ExplorationDisplay(id: 1, frame: firstFrame, content: firstFrame, quartzBounds: firstFrame)]
         session.focus = CGPoint(x: frame.minX + 100, y: frame.maxY - 200)
         for index in 1...2 {
             let id = "fixture-\(index)"
             session.jobs[id] = ExplorationJob(id: id, literal: id, primary: [.issue(tracker: .ppm, key: "NUNCID-\(index)")], fallback: [], contextReason: "Synthetic fixture")
             session.occurrences.append(ExplorationOccurrence(jobID: id, anchor: ScanFeedbackAnchor(literal: id, bounds: CGRect(x: session.focus.x, y: session.focus.y + CGFloat(index * 30), width: 80, height: 20)), confidence: 1))
         }
-        let secondFrame = frame.offsetBy(dx: -frame.width, dy: -100)
+        let secondFrame = firstFrame.offsetBy(dx: firstFrame.width, dy: 0)
         session.displays.append(ExplorationDisplay(id: 2, frame: secondFrame, content: secondFrame, quartzBounds: secondFrame))
         let secondBounds = CGRect(x: secondFrame.minX + 100, y: secondFrame.minY + 100, width: 80, height: 20)
         session.occurrences.append(ExplorationOccurrence(jobID: "fixture-1", anchor: ScanFeedbackAnchor(literal: "fixture-1", bounds: secondBounds), confidence: 1))

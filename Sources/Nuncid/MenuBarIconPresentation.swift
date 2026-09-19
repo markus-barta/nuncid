@@ -18,7 +18,8 @@ import AppKit
             button.setAccessibilityLabel("Nuncid, detection off. Left-click to turn on; right-click for Settings.")
         }
         if updateReady {
-            button.setAccessibilityLabel((button.accessibilityLabel() ?? "Nuncid") + ", update ready. Restart to Update in the menu.")
+            let label = (button.accessibilityLabel() ?? "Nuncid").trimmingCharacters(in: CharacterSet(charactersIn: "."))
+            button.setAccessibilityLabel(label + ", update ready. Restart to Update in the menu.")
         }
         button.image?.isTemplate = true
         // Reset on every transition too: no stale accent/green/label tint.
@@ -47,7 +48,8 @@ import AppKit
     /// image as one template on light, dark and highlighted menu bars.
     static func withUpdateArrow(_ base: NSImage) -> NSImage {
         let image = NSImage(size: NSSize(width: 20, height: 18), flipped: false) { _ in
-            base.draw(in: CGRect(x: 0, y: 0, width: 18, height: 18))
+            base.draw(in: CGRect(x: (18 - base.size.width) / 2, y: (18 - base.size.height) / 2,
+                                 width: base.size.width, height: base.size.height))
             guard let context = NSGraphicsContext.current?.cgContext else { return false }
             context.saveGState()
             context.setBlendMode(.clear)
@@ -85,7 +87,9 @@ import AppKit
                     for ready in [false, true] {
                         let icon = image(for: state, updateReady: ready)
                         let tinted = NSImage(size: CGSize(width: 20, height: 18), flipped: false) { _ in
-                            icon.draw(in: CGRect(x: 0, y: 0, width: ready ? 20 : 18, height: 18))
+                            icon.draw(in: CGRect(x: ready ? 0 : (18 - icon.size.width) / 2,
+                                                y: (18 - icon.size.height) / 2,
+                                                width: icon.size.width, height: icon.size.height))
                             ink.setFill()
                             CGRect(x: 0, y: 0, width: 20, height: 18).fill(using: .sourceAtop)
                             return true
