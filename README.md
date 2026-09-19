@@ -383,6 +383,11 @@ The capture script opens DEBUG-only visual probes long enough to save the curren
 
 Developer ID distribution is opt-in and requires credentials already stored in your macOS keychain. Apple requires Developer ID, hardened runtime, a secure timestamp, notarization, and a stapled ticket for the trusted distribution path; see [Apple’s notarization guidance](https://developer.apple.com/documentation/security/notarizing-macos-software-before-distribution).
 
+The current protected workflow produces ad-hoc signed apps with Ed25519-signed
+updates. It has no Apple signing/notarization credentials configured and does not
+produce notarized releases. Enabling that path requires separate credential
+authorization and release-workflow configuration.
+
 ```sh
 NUNCID_SIGNING_IDENTITY='Developer ID Application: Example (TEAMID)' \
 ./scripts/package-app.sh release

@@ -35,7 +35,7 @@ import Combine
                     }
                     driver.performAction()
                 }
-            } else if state == .failed {
+            } else if state == .failed || state == .checkFailed {
                 let correctRejection = expectsFailure && driver.lastFailureWasValidation
                 fputs("Update rejection codes: \(driver.lastFailureCodes.joined(separator: ", "))\n", stderr)
                 record(correctRejection ? "rejected;installed-app-preserved" : "unexpected-failure")

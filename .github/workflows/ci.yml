@@ -41,5 +41,8 @@ jobs:
           cd /tmp
           "$GITHUB_WORKSPACE/dist/Nuncid.app/Contents/MacOS/Nuncid" --self-test
 
+      - name: Dry-run the release feed with the public fixture key
+        run: python3 scripts/test-update-feed.py
+
       # Complete strict-concurrency checking is intentionally a Swift 6
       # migration gate. The package remains in Swift 5 language mode for 1.0.
