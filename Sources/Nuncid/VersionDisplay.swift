@@ -6,6 +6,7 @@ import SwiftUI
 @MainActor enum VersionDisplay {
     struct Design: Decodable {
         struct Tint: Decodable { let segments: [String]; let mix: Double }
+        let schema: String
         let scheme: String
         let design_revision: Int
         let segments: [String]
@@ -14,9 +15,10 @@ import SwiftUI
     }
 
     static let design: Design = {
-        guard let url = NuncidBrand.resourceURL(named: "calendar-version-display", extension: "json"),
+        guard let url = NuncidBrand.resourceURL(named: "VersioningBundle/display", extension: "json"),
               let data = try? Data(contentsOf: url),
               let design = try? JSONDecoder().decode(Design.self, from: data),
+              design.schema == "inspr.calendar-version-display.v2",
               design.scheme == VersionScheme.calendarV2.rawValue, design.design_revision == 3 else {
             preconditionFailure("Missing or invalid pinned calendar display data")
         }

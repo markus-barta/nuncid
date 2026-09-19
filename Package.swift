@@ -8,8 +8,12 @@ let package = Package(
     targets: [
         .executableTarget(
             name: "Nuncid",
-            resources: [.process("Resources")]
-        )
+            exclude: ["Resources/calendar-version-display.json"],
+            resources: [.process("Resources/Brand"), .process("Resources/Release.json"),
+                        .copy("Resources/VersioningBundle")],
+            plugins: [.plugin(name: "VersioningCheckPlugin")]
+        ),
+        .plugin(name: "VersioningCheckPlugin", capability: .buildTool())
     ],
     swiftLanguageVersions: [.v5]
 )

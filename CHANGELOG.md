@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+## [260919093937.0.0] - 2026-09-19
+
+- Discover your Paimos projects and move the popup freely (NUNCID-95)
+
 - Discover project routing from configured Paimos instances, including new project keys such as HNET, with local authentication and additional profiles in Settings (NUNCID-95).
 - Restore popup movement through an explicit header drag area (NUNCID-95).
 
