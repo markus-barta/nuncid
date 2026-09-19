@@ -327,9 +327,6 @@ enum CanonicalReleaseChecker {
     private let scanFeedback = MenuBarScanFeedbackController()
     private var cancellables = Set<AnyCancellable>()
     private var menuActionTargets: [MenuBarActionTarget] = []
-    private var updateState: AppUpdateState = .checking
-    private var updateTask: Task<Void, Never>?
-    private var lastUpdateCheckAt = Date.distantPast
 
     init(state: AppState) {
         self.state = state
@@ -360,7 +357,6 @@ enum CanonicalReleaseChecker {
             hoverEnabled: state.hoverScanningEnabled,
             matchFound: state.hoverMatchFound
         )
-        beginUpdateCheck()
     }
 
     @objc private func handleStatusItemClick(_ sender: NSStatusBarButton) {
@@ -391,9 +387,6 @@ enum CanonicalReleaseChecker {
     }
 
     private func openMenu(from button: NSStatusBarButton) {
-        if Date().timeIntervalSince(lastUpdateCheckAt) >= 15 * 60 {
-            beginUpdateCheck(showCheckingState: false)
-        }
         let menu = makeMenu()
         statusItem.menu = menu
         button.performClick(nil)
@@ -404,22 +397,15 @@ enum CanonicalReleaseChecker {
         menuActionTargets.removeAll()
         let menu = NSMenu()
 
-        let headerTitles = MenuUpdateHeaderPolicy.titles(
-            installedVersion: NuncidBrand.version,
-            updateState: updateState
-        )
-        let installedItem = addDisabledItem(headerTitles[0], to: menu)
+        let installedItem = addDisabledItem("Nuncid version \(NuncidBrand.version)", to: menu)
         installedItem.attributedTitle = VersionDisplay.attributed(NuncidBrand.version, scheme: NuncidBrand.versionScheme,
             prefix: "Nuncid version ", font: .monospacedSystemFont(ofSize: 13, weight: .regular))
-        switch updateState {
-        case let .available(version, url, scheme):
-            let item = addActionItem(headerTitles[1], to: menu) { NSWorkspace.shared.open(url) }
-            let title = NSMutableAttributedString(attributedString: VersionDisplay.attributed(version, scheme: scheme,
-                prefix: "Update to Version ", font: .monospacedSystemFont(ofSize: 13, weight: .regular)))
-            title.append(NSAttributedString(string: " available"))
-            item.attributedTitle = title
-        case .checking, .current, .unavailable:
-            addDisabledItem(headerTitles[1], to: menu)
+        let update = state.updater
+        if update.canAct {
+            let title = update.state == .current ? "Check for Updates…" : update.state.title
+            addActionItem(title, to: menu) { [weak update] in update?.performAction() }
+        } else {
+            addDisabledItem(update.state.title, to: menu)
         }
         menu.addItem(.separator())
 
@@ -444,22 +430,6 @@ enum CanonicalReleaseChecker {
         addActionItem("About Nuncid", to: menu) { [weak state] in state?.openAbout() }
         addActionItem("Quit Nuncid", keyEquivalent: "q", to: menu) { NSApp.terminate(nil) }
         return menu
-    }
-
-    private func beginUpdateCheck(showCheckingState: Bool = true) {
-        updateTask?.cancel()
-        if showCheckingState { updateState = .checking }
-        lastUpdateCheckAt = Date()
-        let currentVersion = NuncidBrand.version
-        let installed = NuncidBrand.versionScheme.flatMap {
-            ReleaseIdentity(rawVersion: currentVersion, scheme: $0,
-                            sequence: NuncidBrand.releaseSequence)
-        }
-        updateTask = Task { [weak self] in
-            let result = await CanonicalReleaseChecker.check(installed: installed)
-            guard !Task.isCancelled else { return }
-            self?.updateState = result
-        }
     }
 
     @discardableResult

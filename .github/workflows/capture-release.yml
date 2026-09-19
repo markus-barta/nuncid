@@ -15,17 +15,26 @@ jobs:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
+      - name: Check for a new release reservation
+        id: reservation
+        run: |
+          if [[ "$(git show origin/main:VERSION)" != "$(cat VERSION)" ]]; then
+            echo 'changed=true' >> "$GITHUB_OUTPUT"
+          fi
       - name: Capture and compose on the runner display
+        if: steps.reservation.outputs.changed == 'true'
         run: |
           ./scripts/capture-release-shots.sh
           swift scripts/render-marketing-shots.swift
           ./scripts/check-release-consistency.sh
       - name: Collect this reservation's visuals
+        if: steps.reservation.outputs.changed == 'true'
         run: |
           mkdir -p dist/visuals
           version=$(cat VERSION)
           cp docs/screenshots/*-"$version".png dist/visuals/
       - uses: actions/upload-artifact@v4
+        if: steps.reservation.outputs.changed == 'true'
         with:
           name: release-visuals
           path: dist/visuals/*.png

@@ -183,7 +183,8 @@ def create_manifest(root=ROOT):
                     dependency_locks=locks, doctrine_commit=git("rev-parse", "HEAD:doctrine"),
                     artifacts=[
                         {"coordinate": coordinate, "file": archive.name, "sha256": digest(archive)},
-                        {"coordinate": f"checksum/sha256/macos/{arch}/{variant}", "file": checksum.name, "sha256": digest(checksum)}])
+                        {"coordinate": f"checksum/sha256/macos/{arch}/{variant}", "file": checksum.name, "sha256": digest(checksum)},
+                        {"coordinate": "update-feed/sparkle/stable", "file": "appcast.xml", "sha256": digest(root / "dist/appcast.xml")}])
     path = root / "dist" / f"Nuncid-{version}.release-set.json"
     with path.open("x") as output:
         output.write(json.dumps(manifest, indent=2) + "\n")

@@ -20,37 +20,23 @@ jobs:
       - name: Build and test
         run: ./scripts/test.sh
 
-      - name: Identify release reservation
-        id: reservation
-        if: github.event_name == 'pull_request'
-        env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
-        run: |
-          previous=$(git show "$BASE_SHA:VERSION")
-          current=$(python3 scripts/release-policy.py validate)
-          if [[ "$previous" != "$current" ]]; then echo 'changed=true' >> "$GITHUB_OUTPUT"; fi
-
-      - name: Package release candidate once
-        id: package
-        if: steps.reservation.outputs.changed == 'true'
-        run: ./scripts/package-release.sh
-
-      - name: Verify packaged release
-        id: verify
-        if: steps.reservation.outputs.changed == 'true'
-        run: ./scripts/verify-release.sh
-
-      - name: Retain exact candidate bytes and failure evidence
-        if: always() && steps.package.outcome == 'success'
-        uses: actions/upload-artifact@v4
+      - name: Exercise the real Sparkle upgrade lifecycle
+        run: python3 scripts/test-update-integration.py
+      - uses: actions/upload-artifact@v4
+        if: always()
         with:
-          name: ${{ steps.verify.outcome == 'success' && 'nuncid-release-candidate' || 'nuncid-failed-candidate' }}
-          path: |
-            dist/Nuncid-*.zip
-            dist/Nuncid-*.sha256
-            dist/Nuncid-*.release-set.json
-          if-no-files-found: error
-          retention-days: 14
+          name: updater-integration-evidence
+          path: .build/update-*.log
+          if-no-files-found: ignore
+
+      # PR code never receives release-signing secrets. A reviewed exact source
+      # commit is sealed separately with the manually dispatched workflow.
+      - name: Verify embedded updater and portable app
+        run: |
+          ./scripts/package-app.sh release
+          codesign --verify --deep --strict dist/Nuncid.app
+          cd /tmp
+          "$GITHUB_WORKSPACE/dist/Nuncid.app/Contents/MacOS/Nuncid" --self-test
 
       # Complete strict-concurrency checking is intentionally a Swift 6
       # migration gate. The package remains in Swift 5 language mode for 1.0.

@@ -20,6 +20,10 @@ binary_dir=$(cd "$repo_dir" && swift build -c "$configuration" --show-bin-path)
 app_dir="$repo_dir/dist/Nuncid.app"
 mkdir -p "$app_dir/Contents/MacOS" "$app_dir/Contents/Resources"
 cp "$binary_dir/Nuncid" "$app_dir/Contents/MacOS/Nuncid"
+mkdir -p "$app_dir/Contents/Frameworks"
+ditto "$binary_dir/Sparkle.framework" "$app_dir/Contents/Frameworks/Sparkle.framework"
+install_name_tool -add_rpath '@executable_path/../Frameworks' "$app_dir/Contents/MacOS/Nuncid"
+cp "$repo_dir/.build/artifacts/sparkle/Sparkle/LICENSE" "$app_dir/Contents/Resources/Sparkle-LICENSE"
 rm -rf "$app_dir/Contents/Resources/Brand"
 cp -R "$repo_dir/Sources/Nuncid/Resources/Brand" "$app_dir/Contents/Resources/Brand"
 cp "$repo_dir/LICENSE" "$app_dir/Contents/Resources/LICENSE"
@@ -55,7 +59,26 @@ iconutil -c icns "$iconset" -o "$app_dir/Contents/Resources/Nuncid.icns"
 /usr/libexec/PlistBuddy -c 'Add :LSUIElement bool true' "$app_dir/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c 'Add :NSScreenCaptureUsageDescription string Nuncid progressively reads local screen regions during an explicitly invoked exploration session to recognize ticket keys.' "$app_dir/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Add :NuncidSigningMode string $signing_mode" "$app_dir/Contents/Info.plist"
+python3 - "$repo_dir" "$app_dir/Contents/Info.plist" <<'PYCONFIG'
+import base64, json, pathlib, plistlib, sys
+config = json.loads((pathlib.Path(sys.argv[1]) / 'scripts/update-feed.json').read_text())
+path = pathlib.Path(sys.argv[2])
+plist = plistlib.loads(path.read_bytes())
+key = config.get('public_ed_key')
+if key:
+    assert len(base64.b64decode(key, validate=True)) == 32
+    plist.update(SUPublicEDKey=key, SUFeedURL=config['feed_url'],
+                 SURequireSignedFeed=True, SUVerifyUpdateBeforeExtraction=True,
+                 SUEnableAutomaticChecks=True, SUAutomaticallyUpdate=True,
+                 SUAllowsAutomaticUpdates=True, SUSendProfileInfo=False,
+                 SUEnableSystemProfiling=False, SUScheduledCheckInterval=86400)
+    path.write_bytes(plistlib.dumps(plist))
+PYCONFIG
 if [[ "$signing_mode" == developer-id ]]; then
+  sparkle="$app_dir/Contents/Frameworks/Sparkle.framework/Versions/B"
+  for component in "$sparkle/XPCServices/Downloader.xpc" "$sparkle/XPCServices/Installer.xpc" "$sparkle/Updater.app" "$sparkle/Autoupdate" "$app_dir/Contents/Frameworks/Sparkle.framework"; do
+    codesign --force --options runtime --timestamp --sign "$signing_identity" "$component"
+  done
   codesign --force --options runtime --timestamp --sign "$signing_identity" "$app_dir"
   print -r -- "Signed with Developer ID identity: $signing_identity" >&2
 else

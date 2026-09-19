@@ -105,6 +105,20 @@ preparation leaves the current app open with an explanation.
   <img src="docs/screenshots/permission-helper-260919094934.0.0.png" alt="Compact Nuncid app drag source beside System Settings" width="33%">
 </p>
 
+## Quiet updates
+
+Open **Settings → Updates** to enable or disable **Download updates automatically**
+(default on), see the installed/latest version, or check manually. Checks run daily.
+The right-click menu shows **Downloading Update…**, then **Restart to Update** only
+once Sparkle has verified and staged the update. Click it to apply and relaunch;
+Nuncid never restarts automatically. A ready update can also install when you quit.
+Settings and shortcuts stay intact. Failed downloads can be retried from the same menu.
+
+The feed and archives require Ed25519 signatures. Update requests contact GitHub;
+no screenshots, OCR, ticket content, or system profiles are sent. Source builds,
+read-only copies, translocated apps and package-manager installations explain why
+self-updating is unavailable. Install the packaged app into Applications to use updates.
+
 ## What changed—and why it feels better
 
 The app’s **Version History** explains each release in concise, positive human language. Open it from the menu, About window, or by clicking the version in Settings; your running version is always highlighted.
@@ -322,19 +336,28 @@ swift scripts/render-marketing-shots.swift
 ./scripts/verify-release.sh
 ```
 
-Release PRs build the exact PR head and retain the verified ZIP, checksum, and
-manifest as the `nuncid-release-candidate` Actions artifact. **Promote those exact
-bytes**, rather than rebuilding after merge. Tag the manifest's source commit
-once it is merged; verify that its source tree matches the merged tree. Main
-branch CI runs the tests without producing a second candidate. A changed sealed
-candidate requires a new coordinate; do not rerun packaging under its old one.
-Local packaging above is for a reservation that has not already been sealed by CI.
+Release PRs test and verify a portable app without receiving signing secrets.
+After the exact source passes the recorded review gate and CI, dispatch **Seal
+reviewed release candidate** with that full source SHA on the same workflow ref.
+The workflow signs the archive and feed, verifies both with the committed public
+key, and retains the ZIP, checksum, appcast and manifest as
+`nuncid-release-candidate`. **Promote those exact bytes**, rather than rebuilding.
+Tag the manifest's source commit once merged; verify the merged source tree matches.
+A changed sealed candidate requires a new coordinate; do not rerun packaging under
+its old one. Failed candidate bytes must also be preserved for audit.
+
+The dedicated machine-owned Ed25519 key belongs in 1Password. Its CI delivery copy
+is the repository secret `NUNCID_SPARKLE_PRIVATE_KEY`; only the manually dispatched,
+reviewed release workflow receives it. `scripts/update-feed.json` contains the
+public key and HTTPS feed URL. Never put the private key in command arguments,
+tracked files, PR workflows or logs. Signing helpers pass it directly over stdin.
+`python3 scripts/update-feed.py verify` needs only the public key.
 
 Every release uses a long UTC coordinate. Reservation rejects same-second,
 older, and already-used coordinates. Packaging never overwrites an archive or
 release-set manifest. A changed release artifact requires a later reservation;
 an identical artifact is reused by its verified digest, not silently rebuilt.
-Publish the ZIP, SHA-256 file and release-set JSON together, with the metadata
+Publish the ZIP, SHA-256 file, signed `appcast.xml` and release-set JSON together, with the metadata
 block emitted by `python3 scripts/release-policy.py metadata` in the release body.
 
 For rollback, download the previous published ZIP and immutable release-set
@@ -361,7 +384,7 @@ NUNCID_NOTARY_PROFILE='nuncid-notary' \
 NUNCID_EXPECT_NOTARIZED=1 ./scripts/verify-release.sh
 ```
 
-Without those variables, packaging remains deliberately local/ad-hoc and verification says so. CI uses that credential-free path and retains verified candidates, but never publishes a GitHub Release. Complete Swift strict-concurrency checking is reserved for the Swift 6 migration; 1.0 remains in Swift 5 language mode and treats all warnings in its supported build mode as errors.
+Without those variables, packaging remains deliberately local/ad-hoc and verification says so. PR CI uses that credential-free app-signing path. Release candidates additionally require the separate Ed25519 update-signing key; that does not imply Apple notarization. CI never publishes a GitHub Release. Complete Swift strict-concurrency checking is reserved for the Swift 6 migration; 1.0 remains in Swift 5 language mode and treats all warnings in its supported build mode as errors.
 
 ## Project map
 

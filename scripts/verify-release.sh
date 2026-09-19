@@ -58,7 +58,7 @@ manifest = json.loads((root / 'dist' / f'Nuncid-{version}.release-set.json').rea
 record = json.loads((root / 'Sources/Nuncid/Resources/Release.json').read_text())
 assert all(manifest.get(key) == value for key, value in record.items()), 'Manifest identity mismatch'
 assert manifest['source_tree'] == subprocess.check_output(['git', '-C', str(root), 'rev-parse', 'HEAD^{tree}'], text=True).strip()
-assert len(manifest['artifacts']) == 2 and len({item['coordinate'] for item in manifest['artifacts']}) == 2
+assert len(manifest['artifacts']) == 3 and len({item['coordinate'] for item in manifest['artifacts']}) == 3
 for item in manifest['artifacts']:
     assert pathlib.Path(item['file']).name == item['file'], 'Unsafe artifact name'
     assert hashlib.sha256((root / 'dist' / item['file']).read_bytes()).hexdigest() == item['sha256'], 'Artifact digest mismatch'
@@ -80,5 +80,7 @@ PY
   cd "$self_test_dir"
   "$extracted/Contents/MacOS/Nuncid" --self-test
 )
+
+python3 "$repo_dir/scripts/update-feed.py" verify
 
 print -r -- "Verified Nuncid $version package ($signing_mode signing)"
