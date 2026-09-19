@@ -100,6 +100,7 @@ private final class ExplorationMarkerView: NSView {
     private var selectedBounds: CGRect?
     private var promoted: String?
     private var hover = ExplorationHover()
+    private var hoveredAnchor: ScanFeedbackAnchorID?
     private var monitor: Any?
     private var workspaceObservers: [NSObjectProtocol] = []
     private var screenObserver: NSObjectProtocol?
@@ -140,7 +141,7 @@ private final class ExplorationMarkerView: NSView {
         discovery?.cancel(); discovery = nil; tiles.removeAll(); refreshAfter = nil
         workers.values.forEach { $0.cancel() }; workers.removeAll(); manualRequests.removeAll()
         for id in jobs.keys where jobs[id]?.outcome == .resolving { jobs[id]?.outcome = .queued }
-        hover = ExplorationHover()
+        hover = ExplorationHover(); hoveredAnchor = nil
         if clearAnchors { invalidateGeometry() }
         renderMarkers()
     }
@@ -161,7 +162,7 @@ private final class ExplorationMarkerView: NSView {
         workers.values.forEach { $0.cancel() }; workers.removeAll()
         jobs.removeAll(); occurrences.removeAll(); previousNavigationIDs.removeAll(); tiles.removeAll()
         refreshAfter = nil; selected = nil; selectedBounds = nil; promoted = nil
-        hover = ExplorationHover()
+        hover = ExplorationHover(); hoveredAnchor = nil
         hideMarkers()
         markerSurfaces.removeAll(); displays.removeAll()
         if let monitor { NSEvent.removeMonitor(monitor) }
@@ -184,7 +185,7 @@ private final class ExplorationMarkerView: NSView {
         geometryGeneration += 1
         discovery?.cancel(); discovery = nil
         if !occurrences.isEmpty { previousNavigationIDs = visibleJobIDs() }
-        occurrences.removeAll(); tiles.removeAll(); hover = ExplorationHover()
+        occurrences.removeAll(); tiles.removeAll(); hover = ExplorationHover(); hoveredAnchor = nil
         hideMarkers()
         refreshAfter = automaticEnabled ? Date().addingTimeInterval(ExplorationPolicy.settleDuration) : nil
     }
@@ -213,17 +214,25 @@ private final class ExplorationMarkerView: NSView {
             return
         }
         let point = NSEvent.mouseLocation
+        updateHover(at: point, now: now, delay: Double(preferences.hoverMilliseconds) / 1_000)
+        renderMarkers()
+        pump()
+    }
+
+    private func updateHover(at point: CGPoint, now: Date, delay: TimeInterval) {
         let candidate = occurrence(at: point)
+        if candidate?.anchor.id != hoveredAnchor {
+            hoveredAnchor = candidate?.anchor.id
+            hover = ExplorationHover()
+        }
         if candidate?.jobID != hover.candidate {
             promoted = candidate?.jobID
             pump()
         }
-        if let id = hover.update(candidate: candidate?.jobID, now: now, delay: Double(preferences.hoverMilliseconds) / 1_000) {
+        if let id = hover.update(candidate: candidate?.jobID, now: now, delay: delay) {
             selectedBounds = candidate?.anchor.bounds
             select(id, retry: false, near: point)
         }
-        renderMarkers()
-        pump()
     }
 
     private func updateSource(_ current: LookupSourceSnapshot?, preferences: ExplorationPreferences) {
@@ -563,12 +572,17 @@ private final class ExplorationMarkerView: NSView {
             || session.markerSurfaces[2]?.view.markers.count != 1 || session.navigationIDs().count != 2 {
             failures.append("multiple displays retain separate markers but share duplicate ticket lookups and navigation")
         }
+        let firstBounds = session.occurrences.first!.anchor.bounds
+        let firstPoint = CGPoint(x: firstBounds.midX, y: firstBounds.midY)
         let secondPoint = CGPoint(x: secondBounds.midX, y: secondBounds.midY)
         if session.occurrence(at: secondPoint)?.jobID != "fixture-1" {
             failures.append("hover locates the occurrence on the second display")
         }
-        session.selectedBounds = secondBounds
-        session.select("fixture-1", retry: false, near: secondPoint)
+        let hoverTime = Date()
+        session.updateHover(at: firstPoint, now: hoverTime, delay: 0)
+        session.updateHover(at: secondPoint, now: hoverTime.addingTimeInterval(0.01), delay: 0.1)
+        if session.selectedBounds == secondBounds { failures.append("moving to another occurrence still respects hover dwell") }
+        session.updateHover(at: secondPoint, now: hoverTime.addingTimeInterval(0.12), delay: 0.1)
         if session.focus != secondPoint || session.markerSurfaces[2]?.view.markers.first?.2 != true
             || session.markerSurfaces[1]?.view.markers.contains(where: { $0.2 }) != false {
             failures.append("selection highlights only the hovered occurrence and retains its display focus")
