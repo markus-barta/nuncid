@@ -16,6 +16,10 @@ enum TrackerDirectoryChecks {
         check(directory.tracker(forHost: "tickets.example") == extra, "custom browser URL route")
         check(directory.tracker(forHost: "tickets.example.evil") == nil, "host matching is exact")
         let collision = found + [ProjectDescriptor(key: "HNET", name: "Other HNET", aliases: [], tracker: .ppm)]
+        check(ProjectMatcher.cycle(1, projects: [], current: "HNET", tracker: .ppm) == nil, "empty catalog cannot crash project cycling")
+        check(ProjectMatcher.bestMatch(for: "HNET", projects: []) == nil, "empty catalog has no project match")
+        check(ProjectMatcher.cycle(1, projects: collision, current: "HNET", tracker: extra)?.tracker == .ppm, "cycle reaches duplicate project on next instance")
+        check(ProjectMatcher.cycle(1, projects: collision, current: "HNET", tracker: .ppm)?.key == "FRESH", "cycle leaves duplicate namespace and wraps")
         directory.replace(connections: TrackerConnection.defaults + [connection], projects: collision, persist: false)
         check(directory.routes(for: "HNET") == [.ppm, extra], "duplicate project keys retain separate namespaces")
         directory.replace(connections: TrackerConnection.defaults, projects: found, persist: false)

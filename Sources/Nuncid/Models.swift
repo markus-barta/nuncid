@@ -349,6 +349,14 @@ struct ProjectDescriptor: Hashable, Identifiable, Codable, Sendable {
 }
 
 enum ProjectMatcher {
+    static func cycle(_ direction: Int, projects: [ProjectDescriptor], current: String, tracker: Tracker?) -> ProjectDescriptor? {
+        guard !projects.isEmpty else { return nil }
+        let index = projects.firstIndex { $0.key == current && $0.tracker == tracker }
+            ?? projects.firstIndex { $0.key == current } ?? 0
+        let step = direction < 0 ? -1 : 1
+        return projects[(index + step + projects.count) % projects.count]
+    }
+
     static func bestMatch(for rawQuery: String, projects: [ProjectDescriptor] = ProjectDescriptor.selectable, current: String? = nil) -> ProjectDescriptor? {
         let query = normalize(rawQuery)
         guard !query.isEmpty else { return projects.first(where: { $0.key == current }) ?? projects.first }

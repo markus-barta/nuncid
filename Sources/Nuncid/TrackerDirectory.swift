@@ -30,7 +30,7 @@ struct TrackerConnection: Codable, Equatable, Identifiable, Sendable {
 /// Synchronous snapshots keep OCR planning deterministic; only the refresh actor
 /// performs reads. No credential or OCR content is stored in the directory.
 final class TrackerDirectory: @unchecked Sendable {
-    static let shared = TrackerDirectory()
+    static let shared = TrackerDirectory(persists: !CommandLine.arguments.contains { $0.hasSuffix("self-test") })
     private let lock = NSLock()
     private var storedConnections: [TrackerConnection]
     private var storedProjects: [ProjectDescriptor]
@@ -95,7 +95,10 @@ final class TrackerDirectory: @unchecked Sendable {
 }
 
 actor TrackerDiscovery {
-    static let shared = TrackerDiscovery()
+    static let shared = TrackerDiscovery(read: { tracker in
+        guard !CommandLine.arguments.contains(where: { $0.hasSuffix("self-test") || $0.contains("capture-probe") }) else { return nil }
+        return await TicketResolver.readPaimos(tracker, ["project", "list", "--all"])
+    })
     private var lastRefresh = Date.distantPast
     private var inFlight: (id: UUID, connections: [TrackerConnection], task: Task<String, Never>)?
     private var lastUnknownRefresh = Date.distantPast
