@@ -101,6 +101,18 @@ def fixture(expect_failure):
 
 
 subprocess.run([str(ROOT / "scripts/package-app.sh"), "debug"], check=True)
+preview = ROOT / ".build/update-settings.png"
+process = subprocess.Popen([str(ROOT / ".build/debug/Nuncid"), "--settings-updates-probe", "--settings-capture-probe", str(preview)],
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+try:
+    for _ in range(50):
+        if preview.exists():
+            break
+        time.sleep(0.2)
+    assert preview.exists(), "Updates settings preview failed"
+finally:
+    process.terminate()
+    process.wait(timeout=10)
 fixture(True)
 fixture(False)
 print("Real Sparkle signature rejection, staging, user-triggered install, relaunch and preference preservation passed")

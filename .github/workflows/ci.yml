@@ -26,7 +26,10 @@ jobs:
         if: always()
         with:
           name: updater-integration-evidence
-          path: .build/update-*.log
+          include-hidden-files: true
+          path: |
+            .build/update-*.log
+            .build/update-settings.png
           if-no-files-found: ignore
 
       # PR code never receives release-signing secrets. A reviewed exact source
