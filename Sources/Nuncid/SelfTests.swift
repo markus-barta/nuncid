@@ -452,7 +452,7 @@ private actor ResolverConcurrencyProbe {
                                 hoverEnabled: hover, matchFound: found, updateReady: true)
                             guard button.image?.isTemplate == true, button.image?.size == NSSize(width: 20, height: 18),
                                   button.contentTintColor == nil, button.appearance === appearance, button.isEnabled,
-                                  button.accessibilityLabel()?.hasPrefix(ordinaryLabel ?? "") == true,
+                                  button.accessibilityLabel()?.hasPrefix((ordinaryLabel ?? "").trimmingCharacters(in: CharacterSet(charactersIn: "."))) == true,
                                   button.accessibilityLabel()?.contains("update ready") == true,
                                   button.toolTip?.contains("Restart to Update") == true else {
                                 fputs("self-test failed: update arrow retains native icon and access to install action\n", stderr); exit(1)
