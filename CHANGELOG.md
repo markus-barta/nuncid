@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [260919132529.0.0] - 2026-09-19
+
 - Scan awake displays one by one, starting at the pointer, with correctly anchored markers and shared ticket lookups across displays (NUNCID-102).
 - Show a small up-arrow on the menu-bar icon when a verified update is ready to install (NUNCID-103).
 
