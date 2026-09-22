@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+## [260922174705.0.0] - 2026-09-22
+
+- Keep the inspection window steady, and choose how often update checks run (NUNCID-106).
+
 ## [260922161016.0.0] - 2026-09-22
 
 - Resolve a pull request from its GitHub URL anywhere in the same window (NUNCID-105).
