@@ -112,6 +112,134 @@ enum ScreenReferenceChecks {
         check(GitHubRunPreview.cacheLifetime(for: .workflowRun(id: 42, repo: "example/project"), line: line) == 300, "completed run cache TTL")
         let running = TicketLine(key: "Run 42", state: "in-progress", title: "CI", source: "gh")
         check(GitHubRunPreview.cacheLifetime(for: .workflowRun(id: 42, repo: "example/project"), line: running) == 30, "active run freshness")
+
+        func pulls(_ input: OCRContextInput) -> [CandidateSpec] {
+            ScreenReferenceClassifier.classify(input).compactMap(\.spec).filter {
+                if case .pullRequest = $0 { return true }
+                return false
+            }
+        }
+        let transcript = OCRContextInput(fragments: [
+            fragment("https://github.com/markus-barta/nixcfg/pull/722", 0, 0.1, 0.90, 0.7),
+            fragment("Completed PAI-1056 and tidyrepo | paimos", 1, 0.1, 0.62, 0.6),
+            fragment("gh pr merge 722 --squash --auto", 2, 0.1, 0.48, 0.6),
+            fragment("gh pr checks 722 --json name,state", 3, 0.1, 0.40, 0.6),
+            fragment("Deployment PR #722 is running its protected checks", 4, 0.1, 0.58, 0.75),
+            fragment("gh pr diff 722", 5, 0.1, 0.30, 0.4),
+            fragment("gh pr view 722 --json state", 6, 0.1, 0.20, 0.5),
+            fragment("PR #99", 7, 0.1, 0.05, 0.2),
+        ])
+        let transcriptResult = ScreenReferenceClassifier.classify(transcript)
+        let transcriptPulls = transcriptResult.compactMap(\.spec).filter { if case .pullRequest = $0 { return true }; return false }
+        check(transcriptPulls.count == 6 && Set(transcriptPulls) == [.pullRequest(number: 722, repo: "markus-barta/nixcfg")], "unique pull URL scopes every mention of that pull request")
+        check(transcriptResult.contains { if case .issue(_, "PAI-1056") = $0.spec { return true }; return false }, "nearby project key stays its own issue")
+        check(transcriptResult.contains { $0.token.raw == "99" && $0.spec == nil && $0.decision == .unresolved }, "a different pull number does not borrow the URL")
+        let observed = [
+            "Complete PAI-1050 and tidyrepo | paimos",
+            "✓ commented on NIX-570",
+            "branch 'deploy/nix-570-pai-1050' set up to track 'origin/deploy/nix-570-pai-1050'.",
+            "https://github.com/markus-barta/nixcfg/pull/722",
+            "Ran gh pr merge 722 --squash --auto",
+            "gh pr checks 722 --json name,state --jq 'group_by(.state)|map({state:.[0].state,count:length})'",
+            #"[{"count":9,"state":"IN_PROGRESS"},{"count":1,"state":"NEUTRAL"},{"count":2,"state":"SUCCESS"}]"#,
+            "Deployment PR #722 is running its protected checks with auto-merge enabled. The release and final pin review are complete.",
+            "✓ updated NIX-570",
+            "08:22:27 UTC",
+            "Ran gh pr checks 722 --json name,state --jq 'group_by(.state)|map({state:.[0].state,count:length})'",
+            "gh pr view 722 --json state,mergeStateStatus,mergeCommit,headRefOid",
+            #"{"headRefOid":"6a61506850ac02510f09dc872a91b5b5fcc23cc2","mergeCommit":null,"mergeStateStatus":"BLOCKED","state":"OPEN"}"#,
+            "Twelve deployment checks passed; one remains."
+        ]
+        let observedInput = OCRContextInput(fragments: observed.enumerated().map { index, line in
+            fragment(line, index, 0.08, 0.92 - Double(index) * 0.05, 0.84)
+        })
+        let observedResult = ScreenReferenceClassifier.classify(observedInput)
+        let observedPulls = observedResult.compactMap(\.spec).filter { if case .pullRequest = $0 { return true }; return false }
+        check(observedPulls.count == 6 && Set(observedPulls) == [.pullRequest(number: 722, repo: "markus-barta/nixcfg")], "observed nixcfg transcript resolves every pull-request mention")
+        check(observedResult.contains { if case .issue(_, "PAI-1050") = $0.spec { return true }; return false }, "window title keeps PAI-1050 as its own issue")
+        check(!observedResult.contains { if case .pullRequest(_, "inspr-at/paimos") = $0.spec { return true }; return false }, "paimos in the window title does not claim the pull request")
+        func withheld(_ input: OCRContextInput, _ label: String) {
+            let found = ScreenReferenceClassifier.classify(input)
+            let pulls = found.compactMap(\.spec).filter { if case .pullRequest = $0 { return true }; return false }
+            check(pulls == [.pullRequest(number: 722, repo: "markus-barta/nixcfg")], "\(label): only the URL is looked up")
+            check(found.contains { $0.scopeWithheld && $0.spec == nil && $0.reason == "Conflicting or invalid scope" }, "\(label): withheld repository is not replaced")
+        }
+        let url = fragment("https://github.com/markus-barta/nixcfg/pull/722", 0, 0.1, 0.90, 0.7)
+        withheld(.init(fragments: [url, fragment("gh pr view 722 --repo ../paimos", 1, 0.1, 0.20, 0.6)]), "invalid --repo")
+        withheld(.init(fragments: [url, fragment("gh pr view 722 --repo", 2, 0.1, 0.20, 0.5)]), "missing --repo value")
+        let clipped = OCRContextFragment(text: "gh pr view 722 --repo inspr-at/pai", lineIndex: 3, order: 3, confidence: 0.99,
+            region: OCRNormalizedRegion(x: 0.1, y: 0.24, width: 0.6, height: 0.04), contextGroup: 1, endClipped: true)
+        withheld(.init(fragments: [url, clipped]), "cropped --repo")
+        let labelAboveClip = fragment("Deployment PR #722", 4, 0.1, 0.30, 0.45)
+        let clippedBeside = ScreenReferenceClassifier.classify(.init(fragments: [url, labelAboveClip, clipped]))
+        check(clippedBeside.filter { $0.token.raw == "722" && $0.spec == nil }.count == 2, "a label beside a cropped --repo stays withheld")
+        let tied = OCRContextInput(fragments: [
+            fragment("https://github.com/markus-barta/nixcfg/pull/722", 0, 0.1, 0.90, 0.7),
+            fragment("https://github.com/inspr-at/paimos/pull/722", 1, 0.1, 0.70, 0.7),
+            fragment("PR #722 PAI-1050", 2, 0.1, 0.20, 0.4),
+        ])
+        let tiedResult = ScreenReferenceClassifier.classify(tied)
+        check(Set(tiedResult.compactMap(\.spec).filter { if case .pullRequest = $0 { return true }; return false }) == [.pullRequest(number: 722, repo: "markus-barta/nixcfg"), .pullRequest(number: 722, repo: "inspr-at/paimos")], "conflicting URLs stay on their own lines")
+        check(tiedResult.contains { $0.token.raw == "722" && $0.projectInferred == false && $0.spec == nil && $0.reason == "Conflicting or invalid scope" }, "a ticket key does not choose between two pull URLs")
+        let croppedURL = OCRContextFragment(text: "PR #722 https://github.com/inspr-at/pai", lineIndex: 5, order: 5, confidence: 0.99,
+            region: OCRNormalizedRegion(x: 0.1, y: 0.20, width: 0.7, height: 0.04), contextGroup: 1, endClipped: true)
+        withheld(.init(fragments: [url, croppedURL]), "cropped repository URL")
+        withheld(.init(fragments: [
+            fragment("https://github.com/markus-barta/nixcfg/pull/722", 0, 0.1, 0.90, 0.7),
+            fragment("PR #722 inspr-at/paimos PHAROS", 1, 0.1, 0.20, 0.55),
+        ]), "conflicting repositories on the mention")
+        let replaced = OCRContextInput(fragments: [
+            fragment("pull request #42 NUNCID", 0, 0.1, 0.20, 0.5),
+            fragment("https://github.com/markus-barta/nixcfg/pull/42", 1, 0.1, 0.80, 0.7),
+        ])
+        check(Set(pulls(replaced)) == [.pullRequest(number: 42, repo: "markus-barta/nixcfg")], "explicit pull URL replaces a nearby project key")
+        let keptSlug = OCRContextInput(fragments: [
+            fragment("PR42 markus-barta/nuncid", 0, 0.1, 0.20, 0.5),
+            fragment("https://github.com/example/other/pull/42", 1, 0.1, 0.80, 0.6),
+        ])
+        check(Set(pulls(keptSlug)) == [.pullRequest(number: 42, repo: "markus-barta/nuncid"), .pullRequest(number: 42, repo: "example/other")], "same-line repository slug keeps its own scope")
+        let conflict = OCRContextInput(fragments: [
+            fragment("https://github.com/markus-barta/nixcfg/pull/722", 0, 0.1, 0.80, 0.7),
+            fragment("https://github.com/inspr-at/paimos/pull/722", 1, 0.1, 0.40, 0.7),
+            fragment("PR #722", 2, 0.1, 0.10, 0.2),
+        ])
+        let conflicted = ScreenReferenceClassifier.classify(conflict)
+        check(Set(conflicted.compactMap(\.spec).filter { if case .pullRequest = $0 { return true }; return false }) == [.pullRequest(number: 722, repo: "markus-barta/nixcfg"), .pullRequest(number: 722, repo: "inspr-at/paimos")], "distinct pull URLs stay distinct")
+        check(conflicted.filter { $0.spec == nil && $0.decision == .unresolved && $0.reason == "Conflicting or invalid scope" }.count == 1, "unscoped mention does not choose between two URLs")
+        let separateWindow = OCRContextInput(fragments: [
+            fragment("https://github.com/markus-barta/nixcfg/pull/722", 0, 0.1, 0.80, 0.7, group: 1),
+            fragment("gh pr view 722", 1, 0.1, 0.20, 0.4, group: 2),
+        ])
+        check(pulls(separateWindow) == [.pullRequest(number: 722, repo: "markus-barta/nixcfg")], "pull URL does not cross windows")
+        check(ScreenReferenceClassifier.classify(separateWindow).contains { $0.contextGroup == 2 && $0.spec == nil }, "the other window still needs a repository")
+        let runs = OCRContextInput(fragments: [
+            fragment("https://github.com/example/project/actions/runs/42", 0, 0.1, 0.80, 0.7),
+            fragment("gh run view 42", 1, 0.1, 0.20, 0.4),
+            fragment("gh pr view 42", 2, 0.1, 0.10, 0.4),
+        ])
+        let runResult = ScreenReferenceClassifier.classify(runs)
+        check(runResult.compactMap(\.spec) == [.workflowRun(id: 42, repo: "example/project"), .workflowRun(id: 42, repo: "example/project")], "unique run URL scopes a later gh run view")
+        check(runResult.contains { $0.category == .pullRequest && $0.spec == nil }, "a run URL does not scope a pull request")
+        let wrappedChecks = OCRContextInput(fragments: [
+            fragment("gh pr checks", 0, 0.1, 0.66, 0.2),
+            fragment("722", 1, 0.1, 0.60, 0.08),
+            fragment("https://github.com/markus-barta/nixcfg/pull/722", 2, 0.1, 0.90, 0.7),
+        ])
+        check(Set(pulls(wrappedChecks)) == [.pullRequest(number: 722, repo: "markus-barta/nixcfg")], "wrapped gh pr checks inherits the window URL")
+        for text in ["gh pr checks 722", "gh pr diff 722", "gh pr merge 722 --squash --auto"] {
+            let found = classify(text).filter(\.isVisibleCandidate)
+            check(found.count == 1 && found[0].spec == nil && found[0].decision == .unresolved, "hold without a repository: \(text)")
+        }
+        let anchor = CGRect(x: 100, y: 400, width: 40, height: 16)
+        let content = CGRect(x: 0, y: 0, width: 2_000, height: 1_200)
+        let owner = CGRect(x: 40, y: 80, width: 900, height: 1_000)
+        check(ExplorationPolicy.contextRead(around: anchor, category: .pullRequest, owner: owner, content: content) == owner.intersection(content), "pull context reads the whole owning window")
+        let tall = CGRect(x: 0, y: 0, width: 800, height: 2_400)
+        let band = ExplorationPolicy.contextRead(around: anchor, category: .workflowRun, owner: tall, content: tall)
+        check(tall.contains(band) && band.contains(anchor) && band.height <= 1_600 && band.height > 1_000, "tall window context stays bounded around the mention")
+        let crop = ExplorationPolicy.contextRead(around: anchor, category: .issue, owner: owner, content: content)
+        let narrow = CGRect(x: anchor.midX - 500, y: anchor.midY - 120, width: 1_000, height: 240).intersection(content)
+        check(crop == narrow && crop.contains(CGPoint(x: anchor.midX, y: anchor.midY)) && crop.height <= 240 && crop.width <= 1_000, "issue context stays a narrow crop")
         return failures
     }
 }

@@ -176,6 +176,20 @@ enum ExplorationPolicy {
         hypot(rect.midX - point.x, rect.midY - point.y)
     }
 
+    /// Pull requests and workflow runs reread the owning window, capped, so a
+    /// GitHub URL above a later mention shares one capture. Other references
+    /// keep the narrow crop used to recover a flag cut off the same line.
+    static func contextRead(around anchor: CGRect, category: ScreenReferenceCategory, owner: CGRect?, content: CGRect) -> CGRect {
+        if category == .pullRequest || category == .workflowRun, let owner {
+            let window = owner.intersection(content)
+            if window.width > 20, window.height > 20 {
+                if window.height <= 1_600 { return window }
+                return CGRect(x: window.minX, y: anchor.midY - 800, width: window.width, height: 1_600).intersection(window)
+            }
+        }
+        return CGRect(x: anchor.midX - 500, y: anchor.midY - 120, width: 1_000, height: 240).intersection(content)
+    }
+
     static func dispatch(pending: [String], running: Set<String>, promoted: String?, limit: Int) -> [String] {
         var seen = running
         var ready = pending.filter { seen.insert($0).inserted }

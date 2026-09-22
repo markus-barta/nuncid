@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+## [260922161016.0.0] - 2026-09-22
+
+- Resolve a pull request from its GitHub URL anywhere in the same window (NUNCID-105).
+
 ## [260919132529.0.0] - 2026-09-19
 
 - Scan awake displays one by one, starting at the pointer, with correctly anchored markers and shared ticket lookups across displays (NUNCID-102).

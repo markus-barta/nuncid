@@ -439,14 +439,23 @@ private final class ExplorationMarkerView: NSView {
                     // different repositories must never share a resolution job.
                     let primary = reference.lookupSpecs
                     if primary.isEmpty, reference.category != .unknown, contextReads.count < 8 {
-                        let contextKey = "\(reference.category.rawValue):\(token.raw):\(Int(anchor.bounds.midX / 20)):\(Int(anchor.bounds.midY / 20))"
+                        let ownerID = ScreenContextGeometry.owner(of: anchor.bounds, windows: windows)
+                        let owner = ownerID.flatMap { id in windows.first { $0.id == id } }
+                        let contextKey: String
+                        if (reference.category == .pullRequest || reference.category == .workflowRun), let ownerID {
+                            contextKey = "scope:\(ownerID)"
+                        } else {
+                            contextKey = "\(reference.category.rawValue):\(token.raw):\(Int(anchor.bounds.midX / 20)):\(Int(anchor.bounds.midY / 20))"
+                        }
                         if contextReads.insert(contextKey).inserted {
-                            // A command may be wider than a discovery tile. One
-                            // bounded horizontal context read can recover its
-                            // complete --repo value; never guess a cropped scope.
-                            let wider = CGRect(x: anchor.bounds.midX - 500, y: anchor.bounds.midY - 120,
-                                               width: 1_000, height: 240).intersection(content)
-                            if wider.width > 20, wider.height > 20 { tiles.insert(ExplorationTile(display: tile.display, bounds: wider), at: 0) }
+                            // A narrow crop recovers a --repo flag cut off the
+                            // same command. A pull or run rereads its window so
+                            // one GitHub URL can scope later mentions of that
+                            // number. A cropped repository is never guessed.
+                            let wider = ExplorationPolicy.contextRead(around: anchor.bounds, category: reference.category, owner: owner?.bounds, content: content)
+                            if wider.width > 20, wider.height > 20, !captureBounds.contains(wider) {
+                                tiles.insert(ExplorationTile(display: tile.display, bounds: wider), at: 0)
+                            }
                         }
                     }
                     let id = reference.spec?.cacheKey ?? "unresolved:\(reference.category.rawValue):\(anchor.id)"
