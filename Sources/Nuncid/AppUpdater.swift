@@ -116,7 +116,9 @@ enum SignedUpdatePolicy {
     @Published var automaticallyDownloads: Bool {
         didSet {
             defaults.set(automaticallyDownloads, forKey: Self.preferenceKey)
+            updater?.automaticallyChecksForUpdates = automaticallyDownloads
             updater?.automaticallyDownloadsUpdates = automaticallyDownloads
+            applySchedule(checkNow: false)
         }
     }
     @Published var cadence: UpdateCheckCadence {
@@ -188,7 +190,7 @@ enum SignedUpdatePolicy {
         }
         let instance = SPUUpdater(hostBundle: .main, applicationBundle: .main, userDriver: self, delegate: self)
         updater = instance
-        instance.automaticallyChecksForUpdates = true
+        instance.automaticallyChecksForUpdates = automaticallyDownloads
         instance.automaticallyDownloadsUpdates = automaticallyDownloads
         instance.sendsSystemProfile = false
         do {
@@ -220,7 +222,7 @@ enum SignedUpdatePolicy {
         updater?.updateCheckInterval = cadence.interval
         developTimer?.invalidate()
         developTimer = nil
-        guard cadence == .developing, updater != nil else { return }
+        guard cadence == .developing, automaticallyDownloads, updater != nil else { return }
         let timer = Timer(timeInterval: cadence.interval, repeats: true) { [weak self] _ in
             DispatchQueue.main.async { self?.updater?.checkForUpdatesInBackground() }
         }

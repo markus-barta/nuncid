@@ -1482,8 +1482,8 @@ struct UpdateSettingsPage: View {
                 .pickerStyle(.segmented)
                 .disabled(!updater.available || updater.cadence == .developing)
                 Text(updater.cadence == .developing
-                     ? "Checking every 5 minutes. Option-click the menu-bar icon to return to the schedule above. The up arrow appears when an update is ready."
-                     : "Option-click the menu-bar icon to check every 5 minutes while shipping. The up arrow appears when an update is ready. Nuncid never restarts automatically.")
+                     ? "Checking every 5 minutes while automatic downloads are on. Option-click the menu-bar icon to return to the schedule above."
+                     : "Checks run with automatic downloads. Option-click the menu-bar icon to check every 5 minutes while shipping. The up arrow appears when an update is ready. Nuncid never restarts automatically.")
                     .font(.callout).foregroundStyle(.secondary)
             }
             SettingsCard {

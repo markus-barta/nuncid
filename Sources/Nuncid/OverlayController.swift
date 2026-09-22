@@ -24,7 +24,10 @@ enum OverlayMetrics {
         let resolvedWidth = max(360, width ?? (preferences.width == .custom ? preferences.customWidth : preferences.width.points))
         guard !lines.isEmpty else { return sticky ? 264 : 208 }
         let primary = stablePrimaryHeight(lines: lines, preferences: preferences, width: resolvedWidth)
-        let alternatives = min(preferences.alternativePreviews, max(0, lines.count - 1))
+        let alternatives = NeighborRailPolicy.displayedCount(
+            fitted: min(preferences.alternativePreviews, max(0, lines.count - 1)),
+            lineCount: lines.count
+        )
         let rail = alternativeBlockHeight(count: alternatives, sticky: sticky, preferences: preferences)
         let body = primary + (rail > 0 ? sectionSpacing + rail : 0)
         return ceil(body + (sticky ? pinnedReservedChromeHeight : outerPadding * 2 + 28))
@@ -53,7 +56,10 @@ enum OverlayMetrics {
         sticky: Bool
     ) -> Int {
         guard !lines.isEmpty else { return 0 }
-        let requested = min(preferences.alternativePreviews, max(0, lines.count - 1))
+        let requested = NeighborRailPolicy.displayedCount(
+            fitted: min(preferences.alternativePreviews, max(0, lines.count - 1)),
+            lineCount: lines.count
+        )
         guard requested > 0 else { return 0 }
         let primary = stablePrimaryHeight(lines: lines, preferences: preferences, width: width)
         let available = sticky
@@ -230,8 +236,16 @@ private final class PointerTrackingHostingView<Content: View>: NSHostingView<Con
         tracking = area
     }
 
-    override func mouseEntered(with event: NSEvent) { onPointerInside?(true) }
-    override func mouseExited(with event: NSEvent) { onPointerInside?(false) }
+    override func mouseEntered(with event: NSEvent) {
+        super.mouseEntered(with: event)
+        guard event.trackingArea === tracking else { return }
+        onPointerInside?(true)
+    }
+    override func mouseExited(with event: NSEvent) {
+        super.mouseExited(with: event)
+        guard event.trackingArea === tracking else { return }
+        onPointerInside?(false)
+    }
 }
 
 /// SwiftUI hosting views consume background mouse events. Give the header's
@@ -681,7 +695,7 @@ struct OverlayContent: View {
                 .frame(width: 36, height: 5)
             if chromeVisible {
                 InspectionWindowDragArea()
-                    .frame(width: 52, height: 16)
+                    .frame(width: 36, height: 12)
             }
         }
         .padding(.top, 6)
@@ -1515,8 +1529,9 @@ private struct OverlayRootView: View {
         let visible = targetScreen.visibleFrame
         let size = InspectionZoom.bounded(requiresPermissionGuide ? CGSize(width: 580, height: 500) : zoom.requestedSize(baseline: requestedBaseline), visible: visible)
         var origin = panel.frame.origin
+        let anchorTopRight = anchorNextFrameToTopRight && panel.isVisible
         if useSavedPosition { origin = savedOrigin(for: targetScreen, size: size) }
-        else if anchorNextFrameToTopRight && panel.isVisible {
+        else if anchorTopRight {
             origin = PanelPlacement.topRightAnchored(current: panel.frame, newSize: size, visibleFrame: visible)
             anchorNextFrameToTopRight = false
         } else if !panel.isVisible {
@@ -1531,6 +1546,7 @@ private struct OverlayRootView: View {
         syncViewState()
         panel.setFrame(CGRect(origin: origin, size: size), display: true)
         isPositioningProgrammatically = false
+        if anchorTopRight, isSticky { savePinnedOrigin() }
         if shouldRemainFocused { panel.makeKey() }
     }
 
