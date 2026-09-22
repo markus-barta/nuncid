@@ -382,7 +382,7 @@ enum CanonicalReleaseChecker {
         case .armed:
             scanFeedback.show(message: "Detection on · Point at an ID", anchoredTo: button)
         case .cancelled:
-            scanFeedback.show(message: "Detection off", anchoredTo: button)
+            scanFeedback.dismiss()
         case .permissionRequired:
             scanFeedback.show(message: "Screen Recording required", anchoredTo: button)
         }
@@ -522,6 +522,13 @@ enum CanonicalReleaseChecker {
         }
         hideWorkItem = workItem
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.8, execute: workItem)
+    }
+
+    func dismiss() {
+        hideWorkItem?.cancel()
+        hideWorkItem = nil
+        panel?.orderOut(nil)
+        panel = nil
     }
 
     private func makePanel(message: String, reduceMotion: Bool) -> NSPanel {
