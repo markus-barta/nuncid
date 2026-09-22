@@ -350,11 +350,9 @@ its old one. Failed candidate bytes must also be preserved for audit.
 The dedicated machine-owned Ed25519 key is retained by the owner in restricted
 local storage pending owner-managed archival. Its CI delivery copy
 is the `release-signing` **environment** secret `NUNCID_SPARKLE_PRIVATE_KEY`,
-never a repository secret. Configure that environment with the repository owner
-as required reviewer and allow deployments from `main` only. The single maintainer
-may approve a run they dispatched; no other branch may access the environment.
-The signing job waits for that approval; its key is supplied only to the feed-signing
-step, after the app and archive have been built without it. `scripts/update-feed.json` contains the
+never a repository secret. Deployments are allowed from `main` only. A dispatched
+seal proceeds without a separate approval click. The key is supplied only to the
+feed-signing step, after the app and archive have been built without it. `scripts/update-feed.json` contains the
 public key and HTTPS feed URL. Never put the private key in command arguments,
 tracked files, PR workflows or logs. Signing helpers pass it directly over stdin.
 `python3 scripts/update-feed.py verify` verifies a candidate using its archive,

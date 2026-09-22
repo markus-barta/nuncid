@@ -1472,7 +1472,18 @@ struct UpdateSettingsPage: View {
             SettingsCard {
                 Toggle("Download updates automatically", isOn: $updater.automaticallyDownloads)
                     .disabled(!updater.available)
-                Text("Check daily and download verified updates in the background. Nuncid never restarts automatically. A ready update may install when you quit.")
+                Picker("Check for updates", selection: Binding(
+                    get: { updater.cadence == .developing ? updater.standardCadence : updater.cadence },
+                    set: { updater.cadence = $0 }
+                )) {
+                    Text(UpdateCheckCadence.daily.title).tag(UpdateCheckCadence.daily)
+                    Text(UpdateCheckCadence.weekly.title).tag(UpdateCheckCadence.weekly)
+                }
+                .pickerStyle(.segmented)
+                .disabled(!updater.available || updater.cadence == .developing)
+                Text(updater.cadence == .developing
+                     ? "Checking every 5 minutes. Option-click the menu-bar icon to return to the schedule above. The up arrow appears when an update is ready."
+                     : "Option-click the menu-bar icon to check every 5 minutes while shipping. The up arrow appears when an update is ready. Nuncid never restarts automatically.")
                     .font(.callout).foregroundStyle(.secondary)
             }
             SettingsCard {
