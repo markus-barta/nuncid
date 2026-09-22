@@ -134,6 +134,30 @@ enum ScreenReferenceChecks {
         check(transcriptPulls.count == 6 && Set(transcriptPulls) == [.pullRequest(number: 722, repo: "markus-barta/nixcfg")], "unique pull URL scopes every mention of that pull request")
         check(transcriptResult.contains { if case .issue(_, "PAI-1056") = $0.spec { return true }; return false }, "nearby project key stays its own issue")
         check(transcriptResult.contains { $0.token.raw == "99" && $0.spec == nil && $0.decision == .unresolved }, "a different pull number does not borrow the URL")
+        let observed = [
+            "Complete PAI-1050 and tidyrepo | paimos",
+            "✓ commented on NIX-570",
+            "branch 'deploy/nix-570-pai-1050' set up to track 'origin/deploy/nix-570-pai-1050'.",
+            "https://github.com/markus-barta/nixcfg/pull/722",
+            "Ran gh pr merge 722 --squash --auto",
+            "gh pr checks 722 --json name,state --jq 'group_by(.state)|map({state:.[0].state,count:length})'",
+            #"[{"count":9,"state":"IN_PROGRESS"},{"count":1,"state":"NEUTRAL"},{"count":2,"state":"SUCCESS"}]"#,
+            "Deployment PR #722 is running its protected checks with auto-merge enabled. The release and final pin review are complete.",
+            "✓ updated NIX-570",
+            "08:22:27 UTC",
+            "Ran gh pr checks 722 --json name,state --jq 'group_by(.state)|map({state:.[0].state,count:length})'",
+            "gh pr view 722 --json state,mergeStateStatus,mergeCommit,headRefOid",
+            #"{"headRefOid":"6a61506850ac02510f09dc872a91b5b5fcc23cc2","mergeCommit":null,"mergeStateStatus":"BLOCKED","state":"OPEN"}"#,
+            "Twelve deployment checks passed; one remains."
+        ]
+        let observedInput = OCRContextInput(fragments: observed.enumerated().map { index, line in
+            fragment(line, index, 0.08, 0.92 - Double(index) * 0.05, 0.84)
+        })
+        let observedResult = ScreenReferenceClassifier.classify(observedInput)
+        let observedPulls = observedResult.compactMap(\.spec).filter { if case .pullRequest = $0 { return true }; return false }
+        check(observedPulls.count == 6 && Set(observedPulls) == [.pullRequest(number: 722, repo: "markus-barta/nixcfg")], "observed nixcfg transcript resolves every pull-request mention")
+        check(observedResult.contains { if case .issue(_, "PAI-1050") = $0.spec { return true }; return false }, "window title keeps PAI-1050 as its own issue")
+        check(!observedResult.contains { if case .pullRequest(_, "inspr-at/paimos") = $0.spec { return true }; return false }, "paimos in the window title does not claim the pull request")
         let replaced = OCRContextInput(fragments: [
             fragment("pull request #42 NUNCID", 0, 0.1, 0.20, 0.5),
             fragment("https://github.com/markus-barta/nixcfg/pull/42", 1, 0.1, 0.80, 0.7),
