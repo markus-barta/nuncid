@@ -205,6 +205,23 @@ private final class PointerTrackingHostingView<Content: View>: NSHostingView<Con
     var onPointerInside: ((Bool) -> Void)?
     private var tracking: NSTrackingArea?
 
+    override var isOpaque: Bool { false }
+
+    /// The hosting view otherwise paints a square backing behind the rounded card.
+    func clearRoundedBacking() {
+        wantsLayer = true
+        layer?.isOpaque = false
+        layer?.backgroundColor = NSColor.clear.cgColor
+        layer?.cornerRadius = 14
+        layer?.cornerCurve = .continuous
+        layer?.masksToBounds = true
+    }
+
+    override func layout() {
+        super.layout()
+        clearRoundedBacking()
+    }
+
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
         if let tracking { removeTrackingArea(tracking) }
@@ -588,8 +605,9 @@ struct OverlayContent: View {
         .overlay(alignment: .top) { windowGrip }
         .frame(width: constrainedSize.width, height: constrainedSize.height, alignment: .top)
         .background { surface }
-        .clipShape(RoundedRectangle(cornerRadius: 14))
-        .overlay(RoundedRectangle(cornerRadius: 14).stroke(.white.opacity(0.18)))
+        .compositingGroup()
+        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(.white.opacity(0.18)))
         .onChange(of: navigationGeneration) { generation in
             if reduceMotion {
                 settledTitleGeneration = TicketTitleSettlePolicy.completedGeneration(
@@ -1061,6 +1079,21 @@ private struct OverlayRootView: View {
         }
         return []
     }
+    func checkTransparentCorners() -> [String] {
+        guard let content = panel.contentView else { return ["Missing inspection content view"] }
+        content.layoutSubtreeIfNeeded()
+        let background = content.layer?.backgroundColor.flatMap { NSColor(cgColor: $0) }
+        guard !panel.isOpaque,
+              panel.backgroundColor?.alphaComponent == 0,
+              !content.isOpaque,
+              content.layer?.masksToBounds == true,
+              content.layer?.cornerCurve == .continuous,
+              abs((content.layer?.cornerRadius ?? 0) - 14) < 0.1,
+              (background?.alphaComponent ?? 1) < 0.001 else {
+            return ["Inspection window corners are not transparent"]
+        }
+        return []
+    }
     var debugOpacity: CGFloat { panel.alphaValue }
     var debugScrollPresentation: [String: Any] {
         ["target": requestedScrollOpacity, "pointerInside": containsPointer,
@@ -1130,6 +1163,7 @@ private struct OverlayRootView: View {
             onZoom: { [weak self] steps in self?.changeZoom(steps) }
         ))
         content.onPointerInside = { [weak self] inside in self?.viewState.pointerInside = inside }
+        content.clearRoundedBacking()
         panel.contentView = content
         eventMonitor = NSEvent.addLocalMonitorForEvents(matching: [.scrollWheel, .keyDown]) { [weak self] event in
             self?.handle(event) ?? event
