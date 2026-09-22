@@ -187,11 +187,34 @@ enum NeighborRailPolicy {
         }
         return (previous, next)
     }
+
+    /// The scroll wheel moves to the adjacent tickets, so those two ids stay
+    /// visible even when a short window cannot fit the full neighbor budget.
+    static func displayedCount(fitted: Int, lineCount: Int) -> Int {
+        let others = max(0, lineCount - 1)
+        return min(others, max(max(0, fitted), min(2, others)))
+    }
 }
 
 private final class FocusablePanel: NSPanel {
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
+}
+
+private final class PointerTrackingHostingView<Content: View>: NSHostingView<Content> {
+    var onPointerInside: ((Bool) -> Void)?
+    private var tracking: NSTrackingArea?
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let tracking { removeTrackingArea(tracking) }
+        let area = NSTrackingArea(rect: bounds, options: [.activeAlways, .mouseEnteredAndExited, .inVisibleRect], owner: self)
+        addTrackingArea(area)
+        tracking = area
+    }
+
+    override func mouseEntered(with event: NSEvent) { onPointerInside?(true) }
+    override func mouseExited(with event: NSEvent) { onPointerInside?(false) }
 }
 
 /// SwiftUI hosting views consume background mouse events. Give the header's
@@ -541,8 +564,15 @@ struct OverlayContent: View {
     var zoomPercent: Int = 100
     var detectionEnabled: Bool = false
     var baselineSize: CGSize? = nil
+    var chromeVisible: Bool = true
     var onZoom: (Int) -> Void = { _ in }
     private var contentSize: CGSize { baselineSize ?? constrainedSize }
+    private var bodyScale: CGFloat {
+        InspectionZoom.contentScale(
+            natural: CGSize(width: max(1, contentSize.width), height: max(1, contentSize.height - InspectionZoom.headerHeight)),
+            available: CGSize(width: max(1, constrainedSize.width), height: max(1, constrainedSize.height - InspectionZoom.headerHeight))
+        )
+    }
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Namespace private var ticketKeyNamespace
@@ -553,20 +583,9 @@ struct OverlayContent: View {
             inspectionHeader
                 .frame(height: InspectionZoom.headerHeight)
                 .padding(.horizontal, 10)
-            ScrollView([.horizontal, .vertical]) {
-                VStack(alignment: .leading, spacing: 8) {
-                    resultBody
-                        .frame(height: OverlayMetrics.pinnedBodyHeight(totalHeight: contentSize.height), alignment: .top)
-                    pinnedFooter.fixedSize(horizontal: false, vertical: true)
-                }
-                .padding(10)
-                .frame(width: contentSize.width, height: max(0, contentSize.height - InspectionZoom.headerHeight), alignment: .top)
-                .scaleEffect(InspectionZoom(zoomPercent).scale, anchor: .topLeading)
-                .frame(width: contentSize.width * InspectionZoom(zoomPercent).scale,
-                       height: max(0, contentSize.height - InspectionZoom.headerHeight) * InspectionZoom(zoomPercent).scale,
-                       alignment: .topLeading)
-            }
+            fittedBody
         }
+        .overlay(alignment: .top) { windowGrip }
         .frame(width: constrainedSize.width, height: constrainedSize.height, alignment: .top)
         .background { surface }
         .clipShape(RoundedRectangle(cornerRadius: 14))
@@ -616,8 +635,42 @@ struct OverlayContent: View {
         return NeighborRailPolicy.indices(
             count: lines.count,
             selectedIndex: selectedIndex,
-            visibleCount: visibleCount
+            visibleCount: NeighborRailPolicy.displayedCount(fitted: visibleCount, lineCount: lines.count)
         )
+    }
+
+    private var fittedBody: some View {
+        let natural = CGSize(width: max(1, contentSize.width), height: max(1, contentSize.height - InspectionZoom.headerHeight))
+        let available = CGSize(width: max(1, constrainedSize.width), height: max(1, constrainedSize.height - InspectionZoom.headerHeight))
+        let scaled = CGSize(width: natural.width * bodyScale, height: natural.height * bodyScale)
+        return VStack(alignment: .leading, spacing: 8) {
+            resultBody
+                .frame(height: OverlayMetrics.pinnedBodyHeight(totalHeight: contentSize.height), alignment: .top)
+            pinnedFooter.fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(10)
+        .frame(width: natural.width, height: natural.height, alignment: .top)
+        .scaleEffect(bodyScale, anchor: .topLeading)
+        .frame(width: scaled.width, height: scaled.height, alignment: .topLeading)
+        .frame(width: available.width, height: available.height, alignment: .topLeading)
+        .clipped()
+    }
+
+    private var windowGrip: some View {
+        ZStack {
+            Capsule()
+                .fill(Color.primary.opacity(0.38))
+                .frame(width: 36, height: 5)
+            if chromeVisible {
+                InspectionWindowDragArea()
+                    .frame(width: 52, height: 16)
+            }
+        }
+        .padding(.top, 6)
+        .opacity(chromeVisible ? 1 : 0)
+        .allowsHitTesting(chromeVisible)
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.18), value: chromeVisible)
+        .accessibilityLabel("Move window")
     }
 
     @ViewBuilder private var resultBody: some View {
@@ -672,14 +725,19 @@ struct OverlayContent: View {
             HStack(spacing: 6) {
                 pinnedContext
                 Spacer(minLength: 0)
-                Text("Zoom").font(.caption2).foregroundStyle(.secondary)
-                GhostNavigationButton(systemName: "minus", label: "Zoom out", enabled: zoomPercent > 30) { onZoom(-1) }
-                Button("\(zoomPercent)%") { onZoom(0) }
-                    .buttonStyle(.plain).font(.caption.monospacedDigit())
-                    .frame(width: 42, height: 24)
-                    .help("Reset zoom to 100%")
-                    .accessibilityLabel("Zoom \(zoomPercent) percent; reset to 100 percent")
-                GhostNavigationButton(systemName: "plus", label: "Zoom in", enabled: zoomPercent < 300) { onZoom(1) }
+                HStack(spacing: 6) {
+                    Text("Zoom").font(.caption2).foregroundStyle(.secondary)
+                    GhostNavigationButton(systemName: "minus", label: "Zoom out", enabled: zoomPercent > 30) { onZoom(-1) }
+                    Button("\(zoomPercent)%") { onZoom(0) }
+                        .buttonStyle(.plain).font(.caption.monospacedDigit())
+                        .frame(width: 42, height: 24)
+                        .help("Reset zoom to 100%")
+                        .accessibilityLabel("Zoom \(zoomPercent) percent; reset to 100 percent")
+                    GhostNavigationButton(systemName: "plus", label: "Zoom in", enabled: zoomPercent < 300) { onZoom(1) }
+                }
+                .opacity(chromeVisible ? 1 : 0)
+                .allowsHitTesting(chromeVisible)
+                .animation(reduceMotion ? nil : .easeInOut(duration: 0.18), value: chromeVisible)
             }.frame(height: 24)
         }.contentShape(Rectangle())
     }
@@ -878,6 +936,7 @@ struct AppearanceCardPreview: View {
     @Published var zoomPercent = InspectionZoom.load().percent
     @Published var detectionEnabled = false
     @Published var baselineSize = CGSize(width: 520, height: 300)
+    @Published var pointerInside = false
 }
 
 private struct OverlayRootView: View {
@@ -913,6 +972,7 @@ private struct OverlayRootView: View {
                 zoomPercent: state.zoomPercent,
                 detectionEnabled: state.detectionEnabled,
                 baselineSize: state.baselineSize,
+                chromeVisible: state.pointerInside,
                 onZoom: onZoom
             )
             }
@@ -970,6 +1030,7 @@ private struct OverlayRootView: View {
     private var requestedScrollOpacity: CGFloat = 1
     private var opacityAnimation: Task<Void, Never>?
     private var isPositioningProgrammatically = false
+    private var anchorNextFrameToTopRight = false
     private var zoom = InspectionZoom.load()
     private var presentationPreferences = PresentationPreferences.load()
     private var interactionPreferences = PopupInteractionPreferences.load()
@@ -993,8 +1054,9 @@ private struct OverlayRootView: View {
         for view in views {
             // NSView.hitTest takes points in the receiver's superview coordinates.
             let center = view.convert(CGPoint(x: view.bounds.midX, y: view.bounds.midY), to: content.superview)
-            if view.bounds.width <= 0 || view.bounds.height <= 0 || content.hitTest(center) !== view {
-                return ["Inspection header drag surface is not hittable: bounds=\(view.bounds), center=\(center), hit=\(String(describing: content.hitTest(center)))"]
+            let hit = content.hitTest(center)
+            if view.bounds.width <= 0 || view.bounds.height <= 0 || !(hit === view || hit is InspectionWindowDragArea.DragView) {
+                return ["Inspection header drag surface is not hittable: bounds=\(view.bounds), center=\(center), hit=\(String(describing: hit))"]
             }
         }
         return []
@@ -1005,7 +1067,7 @@ private struct OverlayRootView: View {
          "until": scrollOpacityUntil?.timeIntervalSince1970 ?? 0,
          "now": Date().timeIntervalSince1970, "frame": NSStringFromRect(panel.frame),
          "reduceTransparency": NSWorkspace.shared.accessibilityDisplayShouldReduceTransparency,
-         "zoom": zoom.percent, "baseline": NSStringFromSize(contentBaseline), "overflow": hasOverflow]
+         "zoom": zoom.percent, "baseline": NSStringFromSize(contentBaseline), "overflow": false]
     }
 
     func captureProbe(to url: URL) {
@@ -1059,7 +1121,7 @@ private struct OverlayRootView: View {
         panel.isMovable = true
         panel.contentMinSize = OverlaySizePolicy.minimum
         panel.contentMaxSize = OverlaySizePolicy.fallbackMaximum
-        panel.contentView = NSHostingView(rootView: OverlayRootView(
+        let content = PointerTrackingHostingView(rootView: OverlayRootView(
             state: viewState,
             onClose: { [weak self] in self?.onClose?() },
             onTogglePin: { [weak self] in self?.onTogglePin?() },
@@ -1067,6 +1129,8 @@ private struct OverlayRootView: View {
             onCycleProject: { [weak self] direction in self?.cycleProject(direction) },
             onZoom: { [weak self] steps in self?.changeZoom(steps) }
         ))
+        content.onPointerInside = { [weak self] inside in self?.viewState.pointerInside = inside }
+        panel.contentView = content
         eventMonitor = NSEvent.addLocalMonitorForEvents(matching: [.scrollWheel, .keyDown]) { [weak self] event in
             self?.handle(event) ?? event
         }
@@ -1125,6 +1189,7 @@ private struct OverlayRootView: View {
     private func changeZoom(_ steps: Int) {
         zoom = steps == 0 ? InspectionZoom() : zoom.changed(by: steps)
         zoom.persist()
+        anchorNextFrameToTopRight = panel.isVisible
         renderInspection()
     }
 
@@ -1304,10 +1369,6 @@ private struct OverlayRootView: View {
             let globalChord = event.modifierFlags.contains(interactionPreferences.scrollModifier.eventFlag)
             guard pointerInside || globalChord else { return event }
             let shiftingProject = pointerInside && event.modifierFlags.contains(.shift)
-            let bodyContainsPointer = NSEvent.mouseLocation.y < panel.frame.maxY - InspectionZoom.headerHeight
-            if pointerInside, bodyContainsPointer, hasOverflow, !globalChord, !shiftingProject, !event.modifierFlags.contains(.option) {
-                return event // Native scroll view owns magnified overflow, not result cycling.
-            }
             let delta = shiftingProject && abs(event.scrollingDeltaX) > abs(event.scrollingDeltaY) ? event.scrollingDeltaX : event.scrollingDeltaY
             navigateScroll(delta: delta, shiftingProject: shiftingProject, includeMisses: event.modifierFlags.contains(.option))
             return pointerInside ? nil : event
@@ -1411,11 +1472,6 @@ private struct OverlayRootView: View {
             OverlayMetrics.preferredHeight(lines: displayedLines, sticky: true, preferences: presentationPreferences, width: width)))
     }
 
-    private var hasOverflow: Bool {
-        contentBaseline.width * zoom.scale > panel.frame.width + 1 ||
-            (contentBaseline.height - InspectionZoom.headerHeight) * zoom.scale > panel.frame.height - InspectionZoom.headerHeight + 1
-    }
-
     private func renderTemporary() { renderInspection() }
     private func renderPinned(useSavedPosition: Bool) { renderInspection(useSavedPosition: useSavedPosition) }
 
@@ -1426,7 +1482,10 @@ private struct OverlayRootView: View {
         let size = InspectionZoom.bounded(requiresPermissionGuide ? CGSize(width: 580, height: 500) : zoom.requestedSize(baseline: requestedBaseline), visible: visible)
         var origin = panel.frame.origin
         if useSavedPosition { origin = savedOrigin(for: targetScreen, size: size) }
-        else if !panel.isVisible {
+        else if anchorNextFrameToTopRight && panel.isVisible {
+            origin = PanelPlacement.topRightAnchored(current: panel.frame, newSize: size, visibleFrame: visible)
+            anchorNextFrameToTopRight = false
+        } else if !panel.isVisible {
             origin = CGPoint(x: anchorMouse.x + 18, y: anchorMouse.y - size.height - 18)
             if origin.x + size.width > visible.maxX { origin.x = anchorMouse.x - size.width - 18 }
             if origin.y < visible.minY { origin.y = anchorMouse.y + 18 }
@@ -1456,6 +1515,7 @@ private struct OverlayRootView: View {
         viewState.scrollModifier = interactionPreferences.scrollModifier
         viewState.zoomPercent = zoom.percent
         viewState.baselineSize = contentBaseline
+        viewState.pointerInside = containsPointer
     }
 
     private func updatePanelSizeLimits(for screen: NSScreen) {

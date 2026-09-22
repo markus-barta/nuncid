@@ -287,6 +287,15 @@ enum PanelPlacement {
             y: min(max(origin.y, visibleFrame.minY + inset), visibleFrame.maxY - size.height - inset)
         )
     }
+
+    /// Keeps the top-right corner fixed so zoom controls stay under the pointer.
+    static func topRightAnchored(current: CGRect, newSize: CGSize, visibleFrame: CGRect) -> CGPoint {
+        clamped(
+            origin: CGPoint(x: current.maxX - newSize.width, y: current.maxY - newSize.height),
+            size: newSize,
+            visibleFrame: visibleFrame
+        )
+    }
 }
 
 struct PinnedEditState: Equatable {

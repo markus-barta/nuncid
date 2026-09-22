@@ -40,4 +40,11 @@ struct InspectionZoom: Equatable {
     func baseline(afterResize size: CGSize) -> CGSize {
         CGSize(width: size.width / scale, height: Self.headerHeight + max(0, size.height - Self.headerHeight) / scale)
     }
+
+    /// Scales the card body into the window. The result is never larger than
+    /// the body area, so the window does not need a scrollbar.
+    static func contentScale(natural: CGSize, available: CGSize) -> CGFloat {
+        guard natural.width > 0.5, natural.height > 0.5, available.width > 0.5, available.height > 0.5 else { return 1 }
+        return min(available.width / natural.width, available.height / natural.height)
+    }
 }

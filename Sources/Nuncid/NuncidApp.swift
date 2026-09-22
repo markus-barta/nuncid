@@ -1161,7 +1161,7 @@ struct SettingsView: View {
                 Text("During exploration all visible IDs stay marked, with the selected source emphasized. Source scrolling refreshes their positions without discarding the card.").font(.caption).foregroundStyle(.secondary)
             }
             HStack {
-                Text("Drag or resize from any edge. Nuncid remembers the card’s position, size, and pin state.").font(.caption).foregroundStyle(.secondary)
+                Text("Drag the top handle or any edge. Zoom controls appear while the pointer is inside, and the card fits the window without a scrollbar.").font(.caption).foregroundStyle(.secondary)
                 Spacer()
                 Button("Restore Shortcut Default") { state.resetPinHotKey(); recorderFeedback = .success("Pinned-card shortcut restored.") }
             }
