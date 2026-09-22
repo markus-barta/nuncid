@@ -617,6 +617,7 @@ private final class ExplorationMarkerView: NSView {
             failures.append("OFF manual selection resolves only the explicit job")
         }
         failures.append(contentsOf: overlay.checkHeaderDragTargets())
+        failures.append(contentsOf: overlay.checkTransparentCorners())
         _ = session.navigate(1, includeMisses: false)
         session.holdPresentation()
         try? await Task.sleep(nanoseconds: 150_000_000)

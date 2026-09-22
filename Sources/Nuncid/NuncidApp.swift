@@ -1161,7 +1161,7 @@ struct SettingsView: View {
                 Text("During exploration all visible IDs stay marked, with the selected source emphasized. Source scrolling refreshes their positions without discarding the card.").font(.caption).foregroundStyle(.secondary)
             }
             HStack {
-                Text("Drag or resize from any edge. Nuncid remembers the card’s position, size, and pin state.").font(.caption).foregroundStyle(.secondary)
+                Text("Drag the top handle or any edge. Zoom controls appear while the pointer is inside, and the card fits the window without a scrollbar.").font(.caption).foregroundStyle(.secondary)
                 Spacer()
                 Button("Restore Shortcut Default") { state.resetPinHotKey(); recorderFeedback = .success("Pinned-card shortcut restored.") }
             }
@@ -1472,7 +1472,18 @@ struct UpdateSettingsPage: View {
             SettingsCard {
                 Toggle("Download updates automatically", isOn: $updater.automaticallyDownloads)
                     .disabled(!updater.available)
-                Text("Check daily and download verified updates in the background. Nuncid never restarts automatically. A ready update may install when you quit.")
+                Picker("Check for updates", selection: Binding(
+                    get: { updater.cadence == .developing ? updater.standardCadence : updater.cadence },
+                    set: { updater.cadence = $0 }
+                )) {
+                    Text(UpdateCheckCadence.daily.title).tag(UpdateCheckCadence.daily)
+                    Text(UpdateCheckCadence.weekly.title).tag(UpdateCheckCadence.weekly)
+                }
+                .pickerStyle(.segmented)
+                .disabled(!updater.available || updater.cadence == .developing)
+                Text(updater.cadence == .developing
+                     ? "Checking every 5 minutes while automatic downloads are on. Option-click the menu-bar icon to return to the schedule above."
+                     : "Checks run with automatic downloads. Option-click the menu-bar icon to check every 5 minutes while shipping. The up arrow appears when an update is ready. Nuncid never restarts automatically.")
                     .font(.callout).foregroundStyle(.secondary)
             }
             SettingsCard {

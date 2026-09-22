@@ -2,6 +2,51 @@ import AppKit
 import Combine
 import Sparkle
 
+enum UpdateCheckCadence: String, Equatable, CaseIterable, Identifiable {
+    case daily
+    case weekly
+    case developing
+
+    var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .daily: return "Every day"
+        case .weekly: return "Every week"
+        case .developing: return "Every 5 minutes"
+        }
+    }
+    var interval: TimeInterval {
+        switch self {
+        case .daily: return 24 * 60 * 60
+        case .weekly: return 7 * 24 * 60 * 60
+        case .developing: return 5 * 60
+        }
+    }
+
+    /// Option-click enters the 5-minute development cadence and restores the
+    /// previous day or week choice when clicked again.
+    func toggled(standard: Self) -> (cadence: Self, standard: Self) {
+        if self == .developing {
+            let restored = standard == .developing ? Self.daily : standard
+            return (restored, restored)
+        }
+        return (.developing, self)
+    }
+
+    static let storageKey = "updates.checkCadence"
+    static let standardStorageKey = "updates.checkCadence.standard"
+
+    static func load(defaults: UserDefaults = .standard) -> Self {
+        guard let raw = defaults.string(forKey: storageKey), let value = Self(rawValue: raw) else { return .daily }
+        return value
+    }
+
+    static func loadStandard(defaults: UserDefaults = .standard) -> Self {
+        guard let raw = defaults.string(forKey: standardStorageKey), let value = Self(rawValue: raw), value != .developing else { return .daily }
+        return value
+    }
+}
+
 enum DownloadUpdateState: Equatable {
     case idle, checking, downloading, verifying, ready, installing, current, checkFailed, failed, unavailable
 
@@ -73,11 +118,17 @@ enum SignedUpdatePolicy {
             defaults.set(automaticallyDownloads, forKey: Self.preferenceKey)
             updater?.automaticallyChecksForUpdates = automaticallyDownloads
             updater?.automaticallyDownloadsUpdates = automaticallyDownloads
+            applySchedule(checkNow: false)
         }
     }
+    @Published var cadence: UpdateCheckCadence {
+        didSet { persistCadence(checkNow: cadence == .developing && oldValue != .developing) }
+    }
+    private(set) var standardCadence: UpdateCheckCadence
     static let preferenceKey = "updates.automaticallyDownload"
     private let defaults: UserDefaults
     private var updater: SPUUpdater?
+    private var developTimer: Timer?
     private var installReply: ((SPUUserUpdateChoice) -> Void)?
     private var restartRequested = false
     private var userRequestedCheck = false
@@ -115,6 +166,8 @@ enum SignedUpdatePolicy {
     init(startingUpdater: Bool = true, defaults: UserDefaults = .standard) {
         self.defaults = defaults
         automaticallyDownloads = defaults.object(forKey: Self.preferenceKey) as? Bool ?? true
+        cadence = UpdateCheckCadence.load(defaults: defaults)
+        standardCadence = UpdateCheckCadence.loadStandard(defaults: defaults)
         super.init()
 #if DEBUG
         if CommandLine.arguments.contains("--settings-updates-probe") {
@@ -140,8 +193,42 @@ enum SignedUpdatePolicy {
         instance.automaticallyChecksForUpdates = automaticallyDownloads
         instance.automaticallyDownloadsUpdates = automaticallyDownloads
         instance.sendsSystemProfile = false
-        do { try instance.start() }
+        do {
+            try instance.start()
+            applySchedule(checkNow: cadence == .developing)
+        }
         catch { updater = nil; state = .unavailable; detail = "The updater could not start. Reinstall Nuncid to retry." }
+    }
+
+    func toggleDevelopingChecks() {
+        let next = cadence.toggled(standard: standardCadence)
+        standardCadence = next.standard
+        defaults.set(standardCadence.rawValue, forKey: UpdateCheckCadence.standardStorageKey)
+        cadence = next.cadence
+    }
+
+    private func persistCadence(checkNow: Bool) {
+        defaults.set(cadence.rawValue, forKey: UpdateCheckCadence.storageKey)
+        if cadence != .developing {
+            standardCadence = cadence
+            defaults.set(cadence.rawValue, forKey: UpdateCheckCadence.standardStorageKey)
+        }
+        applySchedule(checkNow: checkNow)
+    }
+
+    /// Sparkle's release scheduler will not run faster than once an hour, so
+    /// the 5-minute development cadence uses its own timer.
+    private func applySchedule(checkNow: Bool) {
+        updater?.updateCheckInterval = cadence.interval
+        developTimer?.invalidate()
+        developTimer = nil
+        guard cadence == .developing, automaticallyDownloads, updater != nil else { return }
+        let timer = Timer(timeInterval: cadence.interval, repeats: true) { [weak self] _ in
+            DispatchQueue.main.async { self?.updater?.checkForUpdatesInBackground() }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        developTimer = timer
+        if checkNow { updater?.checkForUpdatesInBackground() }
     }
 
     func performAction() {

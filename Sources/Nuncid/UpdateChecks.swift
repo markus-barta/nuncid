@@ -35,6 +35,16 @@ import Sparkle
         defaults.set("preserved", forKey: "unrelated.preference")
         let driver = AppUpdater(startingUpdater: false, defaults: defaults)
         expect(driver.automaticallyDownloads, "automatic downloads default on")
+        expect(driver.cadence == .daily && driver.cadence.interval == 86_400, "update checks default to once a day")
+        expect(UpdateCheckCadence.weekly.interval == 604_800 && UpdateCheckCadence.developing.interval == 300, "weekly and development intervals")
+        let developing = driver.cadence.toggled(standard: .daily)
+        expect(developing.cadence == .developing && developing.standard == .daily, "option-click enters 5-minute checks")
+        let restored = developing.cadence.toggled(standard: developing.standard)
+        expect(restored.cadence == .daily && restored.standard == .daily, "option-click again restores the daily schedule")
+        let weekly = UpdateCheckCadence.weekly.toggled(standard: .daily)
+        expect(weekly.cadence.toggled(standard: weekly.standard).cadence == .weekly, "option-click restores the previous weekly schedule")
+        driver.cadence = .weekly
+        expect(AppUpdater(startingUpdater: false, defaults: defaults).cadence == .weekly, "chosen cadence survives restart")
         driver.automaticallyDownloads = false
         expect(!AppUpdater(startingUpdater: false, defaults: defaults).automaticallyDownloads, "setting survives restart")
         expect(defaults.string(forKey: "unrelated.preference") == "preserved", "update preference preserves other settings")

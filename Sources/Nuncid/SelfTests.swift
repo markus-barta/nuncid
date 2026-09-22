@@ -563,29 +563,44 @@ private actor ResolverConcurrencyProbe {
         var menuBarScanCount = 0
         var menuBarOpenCount = 0
         MenuBarClickRouter.route(
-            .left(controlKey: false),
+            .left(controlKey: false, optionKey: false),
             scanOnce: { menuBarScanCount += 1 },
-            openMenu: { menuBarOpenCount += 1 }
+            openMenu: { menuBarOpenCount += 1 },
+            toggleUpdateChecks: {}
         )
         guard menuBarScanCount == 1, menuBarOpenCount == 0,
-              MenuBarClickRoutingPolicy.action(for: .left(controlKey: false)) == .scanOnce else {
+              MenuBarClickRoutingPolicy.action(for: .left(controlKey: false, optionKey: false)) == .scanOnce else {
             fputs("self-test failed: menu bar left click exactly-once routing\n", stderr)
             exit(1)
         }
+        var updateCheckToggles = 0
         MenuBarClickRouter.route(
-            .left(controlKey: true),
+            .left(controlKey: false, optionKey: true),
             scanOnce: { menuBarScanCount += 1 },
-            openMenu: { menuBarOpenCount += 1 }
+            openMenu: { menuBarOpenCount += 1 },
+            toggleUpdateChecks: { updateCheckToggles += 1 }
         )
-        guard menuBarScanCount == 1, menuBarOpenCount == 1,
-              MenuBarClickRoutingPolicy.action(for: .left(controlKey: true)) == .openMenu else {
+        guard menuBarScanCount == 1, menuBarOpenCount == 0, updateCheckToggles == 1,
+              MenuBarClickRoutingPolicy.action(for: .left(controlKey: true, optionKey: true)) == .toggleUpdateChecks else {
+            fputs("self-test failed: menu bar option-click changes update checks without scanning\n", stderr)
+            exit(1)
+        }
+        MenuBarClickRouter.route(
+            .left(controlKey: true, optionKey: false),
+            scanOnce: { menuBarScanCount += 1 },
+            openMenu: { menuBarOpenCount += 1 },
+            toggleUpdateChecks: { updateCheckToggles += 1 }
+        )
+        guard menuBarScanCount == 1, menuBarOpenCount == 1, updateCheckToggles == 1,
+              MenuBarClickRoutingPolicy.action(for: .left(controlKey: true, optionKey: false)) == .openMenu else {
             fputs("self-test failed: menu bar control-click zero-scan secondary routing\n", stderr)
             exit(1)
         }
         MenuBarClickRouter.route(
             .right,
             scanOnce: { menuBarScanCount += 1 },
-            openMenu: { menuBarOpenCount += 1 }
+            openMenu: { menuBarOpenCount += 1 },
+            toggleUpdateChecks: {}
         )
         guard menuBarScanCount == 1, menuBarOpenCount == 2,
               MenuBarClickRoutingPolicy.action(for: .right) == .openMenu else {

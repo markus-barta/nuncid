@@ -22,6 +22,20 @@ struct ReleaseNote: Identifiable, Equatable {
 enum ReleaseHistory {
     static let notes: [ReleaseNote] = [
         ReleaseNote(
+            version: "260922174705.0.0",
+            isoDate: "2026-09-22",
+            date: "22 September 2026",
+            theme: "Stay where you left it",
+            headline: "The window stays put. Updates keep their own pace.",
+            intro: "Zoom no longer shifts the card, and you choose how often Nuncid looks for the next release.",
+            items: [
+                ReleaseNoteItem(label: "Zoom without the chase", detail: "Plus and minus keep the top-right corner fixed. Previous and next ticket ids stay visible, and the card fits the window without a scrollbar."),
+                ReleaseNoteItem(label: "Quiet chrome", detail: "The top grip and zoom controls fade in while the pointer is inside. Rounded corners stay transparent. Turning detection off does not open a popup."),
+                ReleaseNoteItem(label: "Your update cadence", detail: "Choose every day or every week in Settings. Option-click the menu-bar icon to check every 5 minutes. The up arrow appears when an update is ready.")
+            ],
+            versionScheme: .calendarV2
+        ),
+        ReleaseNote(
             version: "260922161016.0.0",
             isoDate: "2026-09-22",
             date: "22 September 2026",
