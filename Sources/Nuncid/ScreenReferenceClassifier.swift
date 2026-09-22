@@ -26,6 +26,10 @@ struct ClassifiedScreenReference: Hashable, Sendable {
     let decision: ScreenReferenceDecision
     let reason: String
     var hasExplicitInstance = false
+    /// Scope came only from a nearby project key. A unique pull or run URL for
+    /// this same number in the window may replace it.
+    var projectInferred = false
+    var contextGroup: Int? = nil
 
     var spec: CandidateSpec? {
         if case let .lookup(spec) = decision { return spec }
@@ -57,7 +61,9 @@ enum ScreenReferenceClassifier {
     private static let issueURL = regex(#"(?i)(https?://[^\s?#]+?)/issues/([a-z][a-z0-9]{1,11})-([0-9]+)(?![\w.-])"#)
     private static let label = regex(#"(?i)(?<![\w-])(?:release-)?(PR|pull[ -]+request|ticket|issue)\s*(?:number\s*|no\.?\s*|[:#]\s*)?([0-9]+)(?![\w]|\.[0-9])"#)
     private static let words = regex(#"'[^']*'|"[^"]*"|[;&|\n]|[^\s;&|]+"#)
-    private static let inheritedLabel = regex(#"(?i)(?:\bgh\s+(?:pr|run)\s+view|\bPR|\bpull[ -]+request|\bticket|\bissue)\s*[:#]?\s*$"#)
+    private static let inheritedLabel = regex(#"(?i)(?:\bgh\s+pr\s+(?:view|checks|diff|merge)|\bgh\s+run\s+view|\bPR|\bpull[ -]+request|\bticket|\bissue)\s*[:#]?\s*$"#)
+    private static let pullRequestCommands: Set<String> = ["view", "checks", "diff", "merge"]
+    private static let runCommands: Set<String> = ["view"]
     private static let startsNumber = regex(#"^\s*#?[0-9]+\b"#)
     private static let repoFlag = regex(#"(?:^|\s)(?:(?:--|[—–−]-?)repo(?:=|\s+)|-R\s*)([^\s;&|]+)"#)
     private static let repoURL = regex(#"(?i)https?://github\.com/([a-z0-9-]+/[a-z0-9_.-]+)"#)
@@ -99,10 +105,17 @@ enum ScreenReferenceClassifier {
     }
     private struct Command {
         let category: ScreenReferenceCategory
+        let verb: String
         let number: Word
         let scope: [String]
         let invalidScope: Bool
         let span: NSRange
+    }
+
+    private struct WindowScope: Hashable {
+        let group: Int
+        let category: ScreenReferenceCategory
+        let number: Int
     }
 
     static func classify(_ input: OCRContextInput) -> [ClassifiedScreenReference] {
@@ -115,6 +128,7 @@ enum ScreenReferenceClassifier {
         let bounded = OCRContextInput(fragments: fragments)
         let tokens = Dictionary(grouping: TokenParser.parse(bounded), by: \.fragmentIndex)
         var result: [ClassifiedScreenReference] = []
+        var explicitRepos: [WindowScope: Set<String>] = [:]
         var visibleCount = 0
         for (index, fragment) in fragments.enumerated() {
             guard (fragment.text as NSString).length <= maximumCharactersPerFragment else { continue }
@@ -144,7 +158,7 @@ enum ScreenReferenceClassifier {
                     confidence: fragment.confidence, region: fragment.region)
             }
             func append(_ range: NSRange, kind: NearbyToken.Kind, category: ScreenReferenceCategory,
-                        decision: ScreenReferenceDecision, reason: String, hasExplicitInstance: Bool = false) {
+                        decision: ScreenReferenceDecision, reason: String, hasExplicitInstance: Bool = false, projectInferred: Bool = false) {
                 guard !covered.contains(where: { NSIntersectionRange($0, range).length > 0 }),
                       let found = token(range, kind: kind) else { return }
                 covered.append(range)
@@ -154,9 +168,13 @@ enum ScreenReferenceClassifier {
                     guard visibleCount < maximumReferences else { return }
                     visibleCount += 1
                 }
-                result.append(ClassifiedScreenReference(token: found, category: category, decision: decision, reason: reason, hasExplicitInstance: hasExplicitInstance))
+                result.append(ClassifiedScreenReference(token: found, category: category, decision: decision, reason: reason, hasExplicitInstance: hasExplicitInstance, projectInferred: projectInferred, contextGroup: fragment.contextGroup))
             }
-            func resolve(_ range: NSRange, category: ScreenReferenceCategory, number: Int, scopes: [String], invalid: Bool, reason: String) {
+            func remember(_ category: ScreenReferenceCategory, _ number: Int, _ repo: String) {
+                guard let group = fragment.contextGroup, number > 0 else { return }
+                explicitRepos[WindowScope(group: group, category: category, number: number), default: []].insert(repo)
+            }
+            func resolve(_ range: NSRange, category: ScreenReferenceCategory, number: Int, scopes: [String], invalid: Bool, reason: String, projectInferred: Bool = false) {
                 let unique = Set(scopes)
                 let spec: CandidateSpec?
                 if !invalid, unique.count == 1, let scope = unique.first, number > 0 {
@@ -170,7 +188,8 @@ enum ScreenReferenceClassifier {
                 } else { spec = nil }
                 append(range, kind: .bareNumber(number), category: category,
                        decision: number <= 0 ? .ignore : spec.map(ScreenReferenceDecision.lookup) ?? .unresolved,
-                       reason: spec == nil ? (invalid || unique.count > 1 ? "Conflicting or invalid scope" : "\(category == .issue ? "Project" : "Repository") needed") : reason)
+                       reason: spec == nil ? (invalid || unique.count > 1 ? "Conflicting or invalid scope" : "\(category == .issue ? "Project" : "Repository") needed") : reason,
+                       projectInferred: spec != nil && projectInferred)
             }
 
             for match in issueURL.matches(in: text, range: fullRange(text)) {
@@ -186,15 +205,20 @@ enum ScreenReferenceClassifier {
                 let numberRange = match.range(at: 3)
                 guard let number = Int(ns.substring(with: numberRange)) else { continue }
                 let repo = CandidatePlanner.validatedGitHubRepo(ns.substring(with: match.range(at: 1)))
-                resolve(numberRange, category: ns.substring(with: match.range(at: 2)).lowercased() == "pull" ? .pullRequest : .workflowRun,
-                        number: number, scopes: repo.map { [$0] } ?? [], invalid: repo == nil, reason: "Explicit GitHub reference URL")
+                let category: ScreenReferenceCategory = ns.substring(with: match.range(at: 2)).lowercased() == "pull" ? .pullRequest : .workflowRun
+                if let repo { remember(category, number, repo) }
+                resolve(numberRange, category: category, number: number, scopes: repo.map { [$0] } ?? [], invalid: repo == nil, reason: "Explicit GitHub reference URL")
             }
             for command in commandValues {
                 guard let number = Int(command.number.text) else { continue }
                 let inferred = repositoryScopes(in: neighbors)
+                let inherited = command.scope.isEmpty && !command.invalidScope
+                if !command.invalidScope { for repo in Set(command.scope) { remember(command.category, number, repo) } }
                 resolve(command.number.range, category: command.category, number: number,
-                        scopes: command.scope.isEmpty && !command.invalidScope ? inferred.scopes : command.scope,
-                        invalid: command.invalidScope || (command.scope.isEmpty && inferred.invalid), reason: "Explicit gh \(command.category == .workflowRun ? "run" : "pr") view command")
+                        scopes: inherited ? inferred.scopes : command.scope,
+                        invalid: command.invalidScope || (command.scope.isEmpty && inferred.invalid),
+                        reason: "Explicit gh \(command.category == .workflowRun ? "run" : "pr") \(command.verb) command",
+                        projectInferred: inherited && inferred.projectOnly)
             }
             // A known explicit issue key can contain a long number; numeric/hash
             // heuristics must not reinterpret that key. Paths/compound names still win.
@@ -240,7 +264,7 @@ enum ScreenReferenceClassifier {
                     let context = [localContext] + neighbors
                     if category == .pullRequest {
                         let repos = repositoryScopes(in: context)
-                        resolve(range, category: category, number: number, scopes: repos.scopes, invalid: repos.invalid, reason: "Attached PR label and local repository context")
+                        resolve(range, category: category, number: number, scopes: repos.scopes, invalid: repos.invalid, reason: "Attached PR label and local repository context", projectInferred: repos.projectOnly)
                     } else {
                         let projects = context.flatMap { projectScopes(in: $0.text, startClipped: $0.startClipped, endClipped: $0.endClipped) }
                         resolve(range, category: category, number: number, scopes: projects, invalid: false, reason: "Attached issue label and local project context")
@@ -259,6 +283,28 @@ enum ScreenReferenceClassifier {
                        reason: noise ?? (ambiguousHash ? "Reference type and scope needed" : "No local reference evidence"))
             }
             if visibleCount >= maximumReferences { break }
+        }
+        // A unique pull URL or --repo for this number anywhere in the same
+        // window fills mentions the one-line neighborhood could not scope.
+        // It replaces a nearby project key. It does not cross windows or
+        // override a different explicit repository on that mention.
+        for index in result.indices {
+            let reference = result[index]
+            guard reference.decision != .ignore,
+                  reference.category == .pullRequest || reference.category == .workflowRun,
+                  let group = reference.contextGroup,
+                  let number = mentionedNumber(reference) else { continue }
+            guard let repos = explicitRepos[WindowScope(group: group, category: reference.category, number: number)], !repos.isEmpty else { continue }
+            if repos.count > 1 {
+                if let own = repository(of: reference.spec), repos.contains(own) { continue }
+                result[index] = ClassifiedScreenReference(token: reference.token, category: reference.category, decision: .unresolved, reason: "Conflicting or invalid scope", contextGroup: group)
+                continue
+            }
+            guard let repo = repos.first else { continue }
+            let spec: CandidateSpec = reference.category == .workflowRun ? .workflowRun(id: number, repo: repo) : .pullRequest(number: number, repo: repo)
+            let current = repository(of: reference.spec)
+            guard current != repo, current == nil || reference.projectInferred else { continue }
+            result[index] = ClassifiedScreenReference(token: reference.token, category: reference.category, decision: .lookup(spec), reason: "Unique \(reference.category == .pullRequest ? "pull request" : "workflow run") in this window", contextGroup: group)
         }
         // Numeric clutter must not consume the discovery budget before later
         // real references. Retain only as many ignored diagnostics as fit.
@@ -303,8 +349,13 @@ enum ScreenReferenceClassifier {
                 return true
             }
             while takeRepo() {}
-            guard i + 1 < parts.count, ["pr", "run"].contains(parts[i].text), ["view", "view:"].contains(parts[i + 1].text) else { continue }
-            let category: ScreenReferenceCategory = parts[i].text == "run" ? .workflowRun : .pullRequest
+            guard i + 1 < parts.count else { continue }
+            let family = parts[i].text
+            let verb = commandVerb(parts[i + 1].text)
+            let category: ScreenReferenceCategory
+            if family == "pr", pullRequestCommands.contains(verb) { category = .pullRequest }
+            else if family == "run", runCommands.contains(verb) { category = .workflowRun }
+            else { continue }
             i += 2
             var ids: [Word] = []
             var unsupported = false
@@ -313,7 +364,7 @@ enum ScreenReferenceClassifier {
                 let word = normalizedFlag(parts[i].text)
                 if ["--json", "--jq", "-q", "--template", "-t", "--attempt"].contains(word) { i += 2; continue }
                 if word.hasPrefix("--json=") || word.hasPrefix("--jq=") || word.hasPrefix("--attempt=") { i += 1; continue }
-                if ["--web", "-w", "--comments", "-c", "--log", "--log-failed", "--verbose", "--exit-status"].contains(word) { i += 1; continue }
+                if ["--web", "-w", "--comments", "-c", "--log", "--log-failed", "--verbose", "--exit-status", "--squash", "--rebase", "--merge", "--auto", "--admin", "--delete-branch"].contains(word) { i += 1; continue }
                 if word.hasPrefix("-") { unsupported = true; i += 1; continue }
                 if !word.isEmpty, word.allSatisfy({ $0.isASCII && $0.isNumber }) { ids.append(parts[i]) }
                 i += 1
@@ -321,16 +372,36 @@ enum ScreenReferenceClassifier {
             let end = i < parts.count ? parts[i].range.location : ns.length
             if ids.count == 1, !unsupported {
                 if endClipped, NSMaxRange(ids[0].range) == ns.length { invalid = true }
-                result.append(Command(category: category, number: ids[0], scope: repos, invalidScope: invalid,
+                result.append(Command(category: category, verb: verb, number: ids[0], scope: repos, invalidScope: invalid,
                     span: NSRange(location: parts[start].range.location, length: end - parts[start].range.location)))
             }
         }
         return result
     }
 
-    private static func repositoryScopes(in lines: [OCRContextFragment]) -> (scopes: [String], invalid: Bool) {
+    private static func commandVerb(_ raw: String) -> String {
+        raw.hasSuffix(":") ? String(raw.dropLast()) : raw
+    }
+
+    private static func mentionedNumber(_ reference: ClassifiedScreenReference) -> Int? {
+        switch reference.token.kind {
+        case let .bareNumber(number), let .hashNumber(number): return number
+        default: return nil
+        }
+    }
+
+    private static func repository(of spec: CandidateSpec?) -> String? {
+        switch spec {
+        case let .pullRequest(_, repo), let .workflowRun(_, repo): return repo
+        default: return nil
+        }
+    }
+
+    private static func repositoryScopes(in lines: [OCRContextFragment]) -> (scopes: [String], invalid: Bool, projectOnly: Bool) {
         var repos: [String] = []
         var invalid = false
+        var sawRepository = false
+        var sawProject = false
         let canonical = Set(ProjectDescriptor.presentationHints.compactMap { CandidatePlanner.repo(for: $0.key) })
         for fragment in lines {
             let line = fragment.text
@@ -340,24 +411,24 @@ enum ScreenReferenceClassifier {
             }
             for match in repoFlag.matches(in: line, range: fullRange(line)) {
                 guard complete(match.range) else { invalid = true; continue }
-                if let repo = CandidatePlanner.validatedGitHubRepo(unquote(ns.substring(with: match.range(at: 1)))) { repos.append(repo) }
+                if let repo = CandidatePlanner.validatedGitHubRepo(unquote(ns.substring(with: match.range(at: 1)))) { repos.append(repo); sawRepository = true }
                 else { invalid = true }
             }
             for match in repoURL.matches(in: line, range: fullRange(line)) {
                 guard complete(match.range), isWholeURLStart(match.range, in: line) else { continue }
-                if let repo = CandidatePlanner.validatedGitHubRepo(ns.substring(with: match.range(at: 1))) { repos.append(repo) }
+                if let repo = CandidatePlanner.validatedGitHubRepo(ns.substring(with: match.range(at: 1))) { repos.append(repo); sawRepository = true }
             }
             for match in slug.matches(in: line, range: fullRange(line)) {
                 let raw = ns.substring(with: match.range(at: 1)).lowercased()
                 let enclosing = containers.prefix(2).flatMap { $0.pattern.matches(in: line, range: fullRange(line)) }
                     .contains { NSIntersectionRange($0.range, match.range).length > 0 && $0.range != match.range }
-                if complete(match.range), !enclosing, canonical.contains(raw) { repos.append(raw) }
+                if complete(match.range), !enclosing, canonical.contains(raw) { repos.append(raw); sawRepository = true }
             }
             for key in projectScopes(in: line, startClipped: fragment.startClipped, endClipped: fragment.endClipped) {
-                if let repo = CandidatePlanner.repo(for: key) { repos.append(repo) }
+                if let repo = CandidatePlanner.repo(for: key) { repos.append(repo); sawProject = true }
             }
         }
-        return (repos, invalid)
+        return (repos, invalid, !sawRepository && sawProject)
     }
 
     private static func isWholeURLStart(_ range: NSRange, in text: String) -> Bool {

@@ -22,6 +22,19 @@ struct ReleaseNote: Identifiable, Equatable {
 enum ReleaseHistory {
     static let notes: [ReleaseNote] = [
         ReleaseNote(
+            version: "260922161016.0.0",
+            isoDate: "2026-09-22",
+            date: "22 September 2026",
+            theme: "The link is enough",
+            headline: "One pull URL covers the whole window.",
+            intro: "Nuncid uses a GitHub pull URL to identify every mention of that pull request in the same window.",
+            items: [
+                ReleaseNoteItem(label: "Point anywhere", detail: "PR 722, gh pr view, checks, diff, and merge all use the repository from the pull URL in that window."),
+                ReleaseNoteItem(label: "The repository in the URL", detail: "A workspace or ticket name nearby does not replace it. Two different repositories for the same number stay unresolved.")
+            ],
+            versionScheme: .calendarV2
+        ),
+        ReleaseNote(
             version: "260919132529.0.0",
             isoDate: "2026-09-19",
             date: "19 September 2026",

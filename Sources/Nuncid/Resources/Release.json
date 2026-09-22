@@ -1,9 +1,9 @@
 {
   "version_scheme": "inspr-calendar-v2",
-  "version": "260919132529.0.0",
+  "version": "260922161016.0.0",
   "release_channel": "stable",
-  "release_sequence": 34,
-  "bundle_short_version": "2026.919.48330",
+  "release_sequence": 35,
+  "bundle_short_version": "2026.922.58217",
   "last_legacy_version": "26.09.11.10.11.21",
   "first_calendar_version": "260911101807.0.0",
   "first_calendar_sequence": 26,
