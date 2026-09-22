@@ -181,6 +181,13 @@ enum ScreenReferenceChecks {
         let tiedResult = ScreenReferenceClassifier.classify(tied)
         check(Set(tiedResult.compactMap(\.spec).filter { if case .pullRequest = $0 { return true }; return false }) == [.pullRequest(number: 722, repo: "markus-barta/nixcfg"), .pullRequest(number: 722, repo: "inspr-at/paimos")], "conflicting URLs stay on their own lines")
         check(tiedResult.contains { $0.token.raw == "722" && $0.projectInferred == false && $0.spec == nil && $0.reason == "Conflicting or invalid scope" }, "a ticket key does not choose between two pull URLs")
+        let croppedURL = OCRContextFragment(text: "PR #722 https://github.com/inspr-at/pai", lineIndex: 5, order: 5, confidence: 0.99,
+            region: OCRNormalizedRegion(x: 0.1, y: 0.20, width: 0.7, height: 0.04), contextGroup: 1, endClipped: true)
+        withheld(.init(fragments: [url, croppedURL]), "cropped repository URL")
+        withheld(.init(fragments: [
+            fragment("https://github.com/markus-barta/nixcfg/pull/722", 0, 0.1, 0.90, 0.7),
+            fragment("PR #722 inspr-at/paimos PHAROS", 1, 0.1, 0.20, 0.55),
+        ]), "conflicting repositories on the mention")
         let replaced = OCRContextInput(fragments: [
             fragment("pull request #42 NUNCID", 0, 0.1, 0.20, 0.5),
             fragment("https://github.com/markus-barta/nixcfg/pull/42", 1, 0.1, 0.80, 0.7),

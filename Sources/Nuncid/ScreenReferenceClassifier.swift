@@ -193,7 +193,7 @@ enum ScreenReferenceClassifier {
                        decision: number <= 0 ? .ignore : spec.map(ScreenReferenceDecision.lookup) ?? .unresolved,
                        reason: spec == nil ? (invalid || unique.count > 1 ? "Conflicting or invalid scope" : "\(category == .issue ? "Project" : "Repository") needed") : reason,
                        projectInferred: spec != nil && projectInferred,
-                       scopeWithheld: spec == nil && invalid && (category == .pullRequest || category == .workflowRun))
+                       scopeWithheld: spec == nil && (invalid || unique.count > 1) && (category == .pullRequest || category == .workflowRun))
             }
 
             for match in issueURL.matches(in: text, range: fullRange(text)) {
@@ -420,7 +420,8 @@ enum ScreenReferenceClassifier {
                 else { invalid = true }
             }
             for match in repoURL.matches(in: line, range: fullRange(line)) {
-                guard complete(match.range), isWholeURLStart(match.range, in: line) else { continue }
+                guard isWholeURLStart(match.range, in: line) else { continue }
+                guard complete(match.range) else { invalid = true; continue }
                 if let repo = CandidatePlanner.validatedGitHubRepo(ns.substring(with: match.range(at: 1))) { repos.append(repo); sawRepository = true }
             }
             for match in slug.matches(in: line, range: fullRange(line)) {
