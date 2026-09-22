@@ -29,6 +29,9 @@ struct ClassifiedScreenReference: Hashable, Sendable {
     /// Scope came only from a nearby project key. A unique pull or run URL for
     /// this same number in the window may replace it.
     var projectInferred = false
+    /// The mention had a cropped or invalid repository of its own. A URL
+    /// elsewhere in the window must not replace that withheld scope.
+    var scopeWithheld = false
     var contextGroup: Int? = nil
 
     var spec: CandidateSpec? {
@@ -158,7 +161,7 @@ enum ScreenReferenceClassifier {
                     confidence: fragment.confidence, region: fragment.region)
             }
             func append(_ range: NSRange, kind: NearbyToken.Kind, category: ScreenReferenceCategory,
-                        decision: ScreenReferenceDecision, reason: String, hasExplicitInstance: Bool = false, projectInferred: Bool = false) {
+                        decision: ScreenReferenceDecision, reason: String, hasExplicitInstance: Bool = false, projectInferred: Bool = false, scopeWithheld: Bool = false) {
                 guard !covered.contains(where: { NSIntersectionRange($0, range).length > 0 }),
                       let found = token(range, kind: kind) else { return }
                 covered.append(range)
@@ -168,7 +171,7 @@ enum ScreenReferenceClassifier {
                     guard visibleCount < maximumReferences else { return }
                     visibleCount += 1
                 }
-                result.append(ClassifiedScreenReference(token: found, category: category, decision: decision, reason: reason, hasExplicitInstance: hasExplicitInstance, projectInferred: projectInferred, contextGroup: fragment.contextGroup))
+                result.append(ClassifiedScreenReference(token: found, category: category, decision: decision, reason: reason, hasExplicitInstance: hasExplicitInstance, projectInferred: projectInferred, scopeWithheld: scopeWithheld, contextGroup: fragment.contextGroup))
             }
             func remember(_ category: ScreenReferenceCategory, _ number: Int, _ repo: String) {
                 guard let group = fragment.contextGroup, number > 0 else { return }
@@ -189,7 +192,8 @@ enum ScreenReferenceClassifier {
                 append(range, kind: .bareNumber(number), category: category,
                        decision: number <= 0 ? .ignore : spec.map(ScreenReferenceDecision.lookup) ?? .unresolved,
                        reason: spec == nil ? (invalid || unique.count > 1 ? "Conflicting or invalid scope" : "\(category == .issue ? "Project" : "Repository") needed") : reason,
-                       projectInferred: spec != nil && projectInferred)
+                       projectInferred: spec != nil && projectInferred,
+                       scopeWithheld: spec == nil && invalid && (category == .pullRequest || category == .workflowRun))
             }
 
             for match in issueURL.matches(in: text, range: fullRange(text)) {
@@ -286,17 +290,18 @@ enum ScreenReferenceClassifier {
         }
         // A unique pull URL or --repo for this number anywhere in the same
         // window fills mentions the one-line neighborhood could not scope.
-        // It replaces a nearby project key. It does not cross windows or
-        // override a different explicit repository on that mention.
+        // It replaces a nearby project key. It does not cross windows, replace
+        // a cropped or invalid repository, or let a project key break a tie.
         for index in result.indices {
             let reference = result[index]
-            guard reference.decision != .ignore,
+            guard !reference.scopeWithheld,
+                  reference.decision != .ignore,
                   reference.category == .pullRequest || reference.category == .workflowRun,
                   let group = reference.contextGroup,
                   let number = mentionedNumber(reference) else { continue }
             guard let repos = explicitRepos[WindowScope(group: group, category: reference.category, number: number)], !repos.isEmpty else { continue }
             if repos.count > 1 {
-                if let own = repository(of: reference.spec), repos.contains(own) { continue }
+                if let own = repository(of: reference.spec), repos.contains(own), !reference.projectInferred { continue }
                 result[index] = ClassifiedScreenReference(token: reference.token, category: reference.category, decision: .unresolved, reason: "Conflicting or invalid scope", contextGroup: group)
                 continue
             }
