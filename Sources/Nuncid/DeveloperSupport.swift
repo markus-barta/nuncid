@@ -24,7 +24,7 @@ enum DeveloperLogPolicy {
         let line = raw.split(whereSeparator: \.isNewline).first.map(String.init) ?? raw
         let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return "" }
-        if trimmed.range(of: #"(?i)\b(ghp_|github_pat_|bearer\s+|api[_ -]?key|token=)"#, options: .regularExpression) != nil {
+        if trimmed.range(of: #"(?i)\b(gh[pousr]_|github_pat_|bearer\s+|api[_ -]?key|token=)"#, options: .regularExpression) != nil {
             return "Credential omitted."
         }
         return String(trimmed.prefix(180))
@@ -73,8 +73,8 @@ enum DeveloperTools {
         let profiles = TrackerDirectory.shared.connections.map(\.id)
         if !profiles.isEmpty { report.profiles = profiles.joined(separator: ", ") }
         if let gh = ToolLookup.url(named: "gh") {
-            let status = await ToolLookup.summary(gh, ["auth", "status"])
-            report.gitHub = status.isEmpty ? "Installed · no auth status" : "Installed · \(status)"
+            let signedIn = await ToolLookup.succeeded(gh, ["auth", "status"])
+            report.gitHub = signedIn ? "Installed · signed in" : "Installed · not signed in"
         }
         return report
     }
@@ -87,27 +87,23 @@ enum ToolLookup {
         return paths.first(where: { FileManager.default.isExecutableFile(atPath: $0) }).map(URL.init(fileURLWithPath:))
     }
 
-    static func summary(_ executable: URL, _ arguments: [String]) async -> String {
+    static func succeeded(_ executable: URL, _ arguments: [String]) async -> Bool {
         await withCheckedContinuation { continuation in
             DispatchQueue.global(qos: .utility).async {
                 let process = Process()
-                let pipe = Pipe()
                 process.executableURL = executable
                 process.arguments = arguments
-                process.standardOutput = pipe
-                process.standardError = pipe
+                process.standardOutput = FileHandle.nullDevice
+                process.standardError = FileHandle.nullDevice
                 process.standardInput = FileHandle.nullDevice
                 do { try process.run() } catch {
-                    continuation.resume(returning: "")
+                    continuation.resume(returning: false)
                     return
                 }
                 let deadline = Date().addingTimeInterval(4)
                 while process.isRunning, Date() < deadline { Thread.sleep(forTimeInterval: 0.05) }
                 if process.isRunning { process.terminate() }
-                let data = pipe.fileHandleForReading.readDataToEndOfFile()
-                let text = String(data: data, encoding: .utf8) ?? ""
-                let line = DeveloperLogPolicy.sanitized(text)
-                continuation.resume(returning: line)
+                continuation.resume(returning: process.terminationStatus == 0)
             }
         }
     }

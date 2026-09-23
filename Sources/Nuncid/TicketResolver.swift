@@ -49,6 +49,13 @@ private final class ProcessOutputBuffer: @unchecked Sendable {
         lock.lock(); data.append(chunk); lock.unlock()
     }
 
+    func appendCapped(_ chunk: Data, limit: Int) {
+        lock.lock()
+        let room = limit - data.count
+        if room > 0 { data.append(chunk.prefix(room)) }
+        lock.unlock()
+    }
+
     func snapshot(appending tail: Data) -> Data {
         lock.lock(); data.append(tail); let value = data; lock.unlock()
         return value
@@ -292,8 +299,14 @@ actor TicketResolver {
             process.environment = environment
         }
         let stderr = Pipe()
+        let errorOutput = ProcessOutputBuffer()
         process.standardOutput = stdout
         process.standardError = stderr
+        stderr.fileHandleForReading.readabilityHandler = { handle in
+            let chunk = handle.availableData
+            guard !chunk.isEmpty else { return }
+            errorOutput.appendCapped(chunk, limit: 4_096)
+        }
         stdout.fileHandleForReading.readabilityHandler = { handle in
             let chunk = handle.availableData
             guard !chunk.isEmpty else { return }
@@ -301,6 +314,7 @@ actor TicketResolver {
         }
         do { try process.run() } catch {
             stdout.fileHandleForReading.readabilityHandler = nil
+            stderr.fileHandleForReading.readabilityHandler = nil
             return nil
         }
         cancellationHandle.install(process)
@@ -320,13 +334,16 @@ actor TicketResolver {
         })
         cancellationHandle.clear()
         stdout.fileHandleForReading.readabilityHandler = nil
+        stderr.fileHandleForReading.readabilityHandler = nil
         guard succeeded else {
-            let errorText = String(data: stderr.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
-            let name = executable.lastPathComponent
-            let status = process.terminationStatus
-            Task { @MainActor in
-                let detail = DeveloperLogPolicy.sanitized(errorText)
-                DeveloperLog.shared.recordError(detail.isEmpty ? "\(name) exited \(status)" : "\(name): \(detail)")
+            if !Task.isCancelled {
+                let errorText = String(data: errorOutput.snapshot(appending: stderr.fileHandleForReading.readDataToEndOfFile()), encoding: .utf8) ?? ""
+                let name = executable.lastPathComponent
+                let status = process.terminationStatus
+                Task { @MainActor in
+                    let detail = DeveloperLogPolicy.sanitized(errorText)
+                    DeveloperLog.shared.recordError(detail.isEmpty ? "\(name) exited \(status)" : "\(name): \(detail)")
+                }
             }
             try? stdout.fileHandleForReading.close()
             return nil

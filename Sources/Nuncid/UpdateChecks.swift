@@ -47,7 +47,9 @@ import Sparkle
         closed.developerMode = false
         expect(closed.cadence == .daily && !DeveloperMode.enabled(defaults: defaults), "turning developer mode off returns to every day")
         expect(DeveloperLogPolicy.decision(token: "722", reason: "Repository needed", used: false) == "722 · dropped · Repository needed", "decision log names the id and reason")
-        expect(!DeveloperLogPolicy.sanitized("see ghp_abcdefghijklmnop").contains("ghp_"), "tool errors omit credentials")
+        expect(!DeveloperLogPolicy.sanitized("see gho_abcdefghijklmnop").contains("gho_"), "tool errors omit credentials")
+        driver.cadence = .weekly
+        expect(AppUpdater(startingUpdater: false, defaults: defaults).cadence == .weekly, "chosen cadence survives restart")
         expect(DeveloperLogPolicy.sanitized("HTTP 401: authentication required") == "HTTP 401: authentication required", "ordinary tool errors stay readable")
         driver.cadence = .weekly
         driver.automaticallyDownloads = false

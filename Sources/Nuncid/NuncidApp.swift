@@ -935,8 +935,7 @@ struct SettingsView: View {
     @State private var trackerURL = ""
     @State private var trackerStatus = ""
     @State private var discoveringProjects = false
-    @ObservedObject private var developerLog = DeveloperLog.shared
-    @State private var toolReport = DeveloperToolReport()
+
 
     init(state: AppState) {
         self.state = state
@@ -1023,7 +1022,7 @@ struct SettingsView: View {
         case .trackers: trackersPage
         case .updates: UpdateSettingsPage(updater: state.updater)
         case .privacy: privacyPage
-        case .developer: developerPage
+        case .developer: DeveloperSettingsPage(updater: state.updater) { selection = .updates }
         }
     }
 
@@ -1221,54 +1220,6 @@ struct SettingsView: View {
         .onChange(of: state.presentationPreferences) { value in
             if !AppearanceResetPolicy.shouldKeepUndo(previous: appearanceBeforeReset, current: value) {
                 appearanceBeforeReset = nil
-            }
-        }
-    }
-
-    private var developerPage: some View {
-        SettingsPage(title: "Developer", subtitle: "Local notes for testing detection and updates.") {
-            SettingsCard {
-                Toggle("Developer mode", isOn: Binding(
-                    get: { state.updater.developerMode },
-                    set: { state.updater.developerMode = $0 }
-                ))
-                Text(state.updater.developerMode
-                     ? "Shorter intervals are for testing only. They appear in Updates."
-                     : "Shows testing update intervals and the latest detection decisions on this Mac.")
-                    .font(.callout).foregroundStyle(.secondary)
-                if state.updater.developerMode {
-                    Button("Open Updates") { selection = .updates }
-                }
-            }
-            if state.updater.developerMode {
-                SettingsCard {
-                    SettingsCardHeader(icon: "text.magnifyingglass", title: "Recent decisions", subtitle: "The id, whether it was used, and why. Not a copy of the screen.")
-                    if developerLog.decisions.isEmpty {
-                        Text("None yet.").font(.callout).foregroundStyle(.secondary)
-                    } else {
-                        ForEach(Array(developerLog.decisions.enumerated()), id: \.offset) { _, line in
-                            Text(line).font(.caption.monospaced()).frame(maxWidth: .infinity, alignment: .leading)
-                        }
-                    }
-                    SettingsCardHeader(icon: "exclamationmark.triangle", title: "Recent errors", subtitle: "The last failed paimos or gh lookup. Credentials are omitted.")
-                    if developerLog.errors.isEmpty {
-                        Text("None yet.").font(.callout).foregroundStyle(.secondary)
-                    } else {
-                        ForEach(Array(developerLog.errors.enumerated()), id: \.offset) { _, line in
-                            Text(line).font(.caption.monospaced()).frame(maxWidth: .infinity, alignment: .leading)
-                        }
-                    }
-                    Button("Clear notes") { developerLog.clear() }
-                }
-                SettingsCard {
-                    SettingsCardHeader(icon: "terminal", title: "Tools", subtitle: "Nuncid only reads these. It does not store credentials.")
-                    Text("paimos · \(toolReport.paimos)").font(.callout)
-                    Text("Profiles · \(toolReport.profiles)").font(.callout)
-                    Text("gh · \(toolReport.gitHub)").font(.callout)
-                }
-                .task {
-                    toolReport = await DeveloperTools.report()
-                }
             }
         }
     }
@@ -1517,6 +1468,58 @@ private struct AboutView: View {
     }
 }
 
+struct DeveloperSettingsPage: View {
+    @ObservedObject var updater: AppUpdater
+    @ObservedObject private var log = DeveloperLog.shared
+    var openUpdates: () -> Void
+    @State private var tools = DeveloperToolReport()
+
+    var body: some View {
+        SettingsPage(title: "Developer", subtitle: "Local notes for testing detection and updates.") {
+            SettingsCard {
+                Toggle("Developer mode", isOn: $updater.developerMode)
+                Text(updater.developerMode
+                     ? "Shorter intervals are for testing only. They appear in Updates."
+                     : "Shows testing update intervals and the latest detection decisions on this Mac.")
+                    .font(.callout).foregroundStyle(.secondary)
+                if updater.developerMode {
+                    Button("Open Updates", action: openUpdates)
+                }
+            }
+            if updater.developerMode {
+                SettingsCard {
+                    SettingsCardHeader(icon: "text.magnifyingglass", title: "Recent decisions", subtitle: "Ids Nuncid kept or could not look up, and why. Ids it ignored are not listed.")
+                    if log.decisions.isEmpty {
+                        Text("None yet.").font(.callout).foregroundStyle(.secondary)
+                    } else {
+                        ForEach(Array(log.decisions.enumerated()), id: \.offset) { _, line in
+                            Text(line).font(.caption.monospaced()).frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                    }
+                    SettingsCardHeader(icon: "exclamationmark.triangle", title: "Recent errors", subtitle: "The last failed paimos or gh lookup. Credentials are omitted.")
+                    if log.errors.isEmpty {
+                        Text("None yet.").font(.callout).foregroundStyle(.secondary)
+                    } else {
+                        ForEach(Array(log.errors.enumerated()), id: \.offset) { _, line in
+                            Text(line).font(.caption.monospaced()).frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                    }
+                    Button("Clear notes") { log.clear() }
+                }
+                SettingsCard {
+                    SettingsCardHeader(icon: "terminal", title: "Tools", subtitle: "Nuncid only reads these. It does not store credentials.")
+                    Text("paimos · \(tools.paimos)").font(.callout)
+                    Text("Profiles · \(tools.profiles)").font(.callout)
+                    Text("gh · \(tools.gitHub)").font(.callout)
+                }
+                .task(id: updater.developerMode) {
+                    tools = await DeveloperTools.report()
+                }
+            }
+        }
+    }
+}
+
 struct UpdateSettingsPage: View {
     @ObservedObject var updater: AppUpdater
 
@@ -1532,7 +1535,7 @@ struct UpdateSettingsPage: View {
                 }
                 .pickerStyle(.segmented)
                 .disabled(!updater.available)
-                Text(updater.cadence.isTestingOnly
+                Text(updater.developerMode
                      ? "Shorter intervals are for testing only. Checks run while automatic downloads are on. The up arrow appears when an update is ready."
                      : "Checks run while automatic downloads are on. The up arrow appears when an update is ready. Nuncid never restarts automatically.")
                     .font(.callout).foregroundStyle(.secondary)
