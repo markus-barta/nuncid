@@ -103,7 +103,7 @@ enum ToolLookup {
                 let deadline = Date().addingTimeInterval(4)
                 while process.isRunning, Date() < deadline { Thread.sleep(forTimeInterval: 0.05) }
                 if process.isRunning { process.terminate() }
-                continuation.resume(returning: process.terminationStatus == 0)
+                continuation.resume(returning: !process.isRunning && process.terminationStatus == 0)
             }
         }
     }
