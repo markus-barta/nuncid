@@ -22,6 +22,19 @@ struct ReleaseNote: Identifiable, Equatable {
 enum ReleaseHistory {
     static let notes: [ReleaseNote] = [
         ReleaseNote(
+            version: "260923071929.0.0",
+            isoDate: "2026-09-23",
+            date: "23 September 2026",
+            theme: "A switch for testing",
+            headline: "Shorter update checks stay behind Developer mode.",
+            intro: "Week and day remain the normal schedule. Hour and 5 minutes appear only when you turn Developer mode on.",
+            items: [
+                ReleaseNoteItem(label: "Testing intervals", detail: "Developer mode adds Every hour and Every 5 minutes in Updates. They are for testing only. Turning the mode off returns the schedule to every day."),
+                ReleaseNoteItem(label: "Local notes", detail: "The Developer section lists recent detection decisions, lookup errors without credentials, and whether paimos and gh are available.")
+            ],
+            versionScheme: .calendarV2
+        ),
+        ReleaseNote(
             version: "260922174705.0.0",
             isoDate: "2026-09-22",
             date: "22 September 2026",

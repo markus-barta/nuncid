@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+## [260923071929.0.0] - 2026-09-23
+
+- Add Developer mode for testing update intervals and local detection notes (NUNCID-107).
+
 ## [260922174705.0.0] - 2026-09-22
 
 - Keep the inspection window steady, and choose how often update checks run (NUNCID-106).
