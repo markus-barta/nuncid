@@ -462,6 +462,10 @@ private final class ExplorationMarkerView: NSView {
                     if jobs[id] == nil {
                         guard jobs.count < ExplorationPolicy.maximumCandidates else { continue }
                         jobs[id] = ExplorationJob(id: id, literal: token.raw, primary: primary, fallback: [], contextReason: reference.reason)
+                        let literal = token.raw
+                        let reason = reference.reason
+                        let used = reference.spec != nil
+                        Task { @MainActor in DeveloperLog.shared.recordDecision(token: literal, reason: reason, used: used) }
                     }
                     let candidate = ExplorationOccurrence(jobID: id, anchor: anchor, confidence: token.confidence ?? 0)
                     if let index = occurrences.firstIndex(where: { ExplorationPolicy.sameOccurrence($0.anchor.bounds, anchor.bounds) }) {
