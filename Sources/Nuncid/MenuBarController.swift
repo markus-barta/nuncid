@@ -8,22 +8,19 @@ enum MenuBarScanOutcome: Equatable {
 }
 
 enum MenuBarPointerClick: Equatable {
-    case left(controlKey: Bool, optionKey: Bool)
+    case left(controlKey: Bool)
     case right
 }
 
 enum MenuBarClickAction: Equatable {
     case scanOnce
     case openMenu
-    case toggleUpdateChecks
 }
 
 enum MenuBarClickRoutingPolicy {
     static func action(for click: MenuBarPointerClick) -> MenuBarClickAction {
         switch click {
-        case let .left(controlKey, optionKey):
-            if optionKey { return .toggleUpdateChecks }
-            return controlKey ? .openMenu : .scanOnce
+        case let .left(controlKey): return controlKey ? .openMenu : .scanOnce
         case .right: return .openMenu
         }
     }
@@ -37,13 +34,11 @@ enum MenuBarClickRouter {
     static func route(
         _ click: MenuBarPointerClick,
         scanOnce: () -> Void,
-        openMenu: () -> Void,
-        toggleUpdateChecks: () -> Void
+        openMenu: () -> Void
     ) {
         switch MenuBarClickRoutingPolicy.action(for: click) {
         case .scanOnce: scanOnce()
         case .openMenu: openMenu()
-        case .toggleUpdateChecks: toggleUpdateChecks()
         }
     }
 }
@@ -370,15 +365,14 @@ enum CanonicalReleaseChecker {
         guard let event = NSApp.currentEvent else { return }
         let click: MenuBarPointerClick
         switch event.type {
-        case .leftMouseUp: click = .left(controlKey: event.modifierFlags.contains(.control), optionKey: event.modifierFlags.contains(.option))
+        case .leftMouseUp: click = .left(controlKey: event.modifierFlags.contains(.control))
         case .rightMouseUp: click = .right
         default: return
         }
         MenuBarClickRouter.route(
             click,
             scanOnce: { [weak self] in self?.scanOnce(from: sender) },
-            openMenu: { [weak self] in self?.openMenu(from: sender) },
-            toggleUpdateChecks: { [weak self] in self?.toggleUpdateChecks(from: sender) }
+            openMenu: { [weak self] in self?.openMenu(from: sender) }
         )
     }
 
@@ -392,12 +386,6 @@ enum CanonicalReleaseChecker {
         case .permissionRequired:
             scanFeedback.show(message: "Screen Recording required", anchoredTo: button)
         }
-    }
-
-    private func toggleUpdateChecks(from button: NSStatusBarButton) {
-        state.updater.toggleDevelopingChecks()
-        let cadence = state.updater.cadence
-        scanFeedback.show(message: "Update checks: \(cadence.title.lowercased())", anchoredTo: button)
     }
 
     private func openMenu(from button: NSStatusBarButton) {
@@ -636,9 +624,9 @@ enum MenuBarClickRoutingProbe {
     static func runAndExit() -> Never {
         var scans = 0
         var menus = 0
-        MenuBarClickRouter.route(.left(controlKey: false, optionKey: false), scanOnce: { scans += 1 }, openMenu: { menus += 1 }, toggleUpdateChecks: {})
+        MenuBarClickRouter.route(.left(controlKey: false), scanOnce: { scans += 1 }, openMenu: { menus += 1 })
         guard scans == 1, menus == 0 else { Darwin.exit(1) }
-        MenuBarClickRouter.route(.right, scanOnce: { scans += 1 }, openMenu: { menus += 1 }, toggleUpdateChecks: {})
+        MenuBarClickRouter.route(.right, scanOnce: { scans += 1 }, openMenu: { menus += 1 })
         guard scans == 1, menus == 1 else { Darwin.exit(1) }
         print("menu click routing probe passed: left=1 target-selection request, right=0 scans")
         Darwin.exit(0)

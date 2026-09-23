@@ -895,7 +895,7 @@ private struct ShortcutRecorder: NSViewRepresentable {
 }
 
 private enum SettingsPane: String, CaseIterable, Identifiable {
-    case scanning, markers, pinned, appearance, trackers, updates, privacy
+    case scanning, markers, pinned, appearance, trackers, updates, privacy, developer
 
     var id: String { rawValue }
     var title: String {
@@ -907,6 +907,7 @@ private enum SettingsPane: String, CaseIterable, Identifiable {
         case .trackers: return "Trackers"
         case .updates: return "Updates"
         case .privacy: return "Privacy"
+        case .developer: return "Developer"
         }
     }
     var icon: String {
@@ -918,6 +919,7 @@ private enum SettingsPane: String, CaseIterable, Identifiable {
         case .trackers: return "server.rack"
         case .updates: return "arrow.down.circle"
         case .privacy: return "hand.raised"
+        case .developer: return "wrench.and.screwdriver"
         }
     }
 }
@@ -933,6 +935,8 @@ struct SettingsView: View {
     @State private var trackerURL = ""
     @State private var trackerStatus = ""
     @State private var discoveringProjects = false
+    @ObservedObject private var developerLog = DeveloperLog.shared
+    @State private var toolReport = DeveloperToolReport()
 
     init(state: AppState) {
         self.state = state
@@ -1019,6 +1023,7 @@ struct SettingsView: View {
         case .trackers: trackersPage
         case .updates: UpdateSettingsPage(updater: state.updater)
         case .privacy: privacyPage
+        case .developer: developerPage
         }
     }
 
@@ -1216,6 +1221,54 @@ struct SettingsView: View {
         .onChange(of: state.presentationPreferences) { value in
             if !AppearanceResetPolicy.shouldKeepUndo(previous: appearanceBeforeReset, current: value) {
                 appearanceBeforeReset = nil
+            }
+        }
+    }
+
+    private var developerPage: some View {
+        SettingsPage(title: "Developer", subtitle: "Local notes for testing detection and updates.") {
+            SettingsCard {
+                Toggle("Developer mode", isOn: Binding(
+                    get: { state.updater.developerMode },
+                    set: { state.updater.developerMode = $0 }
+                ))
+                Text(state.updater.developerMode
+                     ? "Shorter intervals are for testing only. They appear in Updates."
+                     : "Shows testing update intervals and the latest detection decisions on this Mac.")
+                    .font(.callout).foregroundStyle(.secondary)
+                if state.updater.developerMode {
+                    Button("Open Updates") { selection = .updates }
+                }
+            }
+            if state.updater.developerMode {
+                SettingsCard {
+                    SettingsCardHeader(icon: "text.magnifyingglass", title: "Recent decisions", subtitle: "The id, whether it was used, and why. Not a copy of the screen.")
+                    if developerLog.decisions.isEmpty {
+                        Text("None yet.").font(.callout).foregroundStyle(.secondary)
+                    } else {
+                        ForEach(Array(developerLog.decisions.enumerated()), id: \.offset) { _, line in
+                            Text(line).font(.caption.monospaced()).frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                    }
+                    SettingsCardHeader(icon: "exclamationmark.triangle", title: "Recent errors", subtitle: "The last failed paimos or gh lookup. Credentials are omitted.")
+                    if developerLog.errors.isEmpty {
+                        Text("None yet.").font(.callout).foregroundStyle(.secondary)
+                    } else {
+                        ForEach(Array(developerLog.errors.enumerated()), id: \.offset) { _, line in
+                            Text(line).font(.caption.monospaced()).frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                    }
+                    Button("Clear notes") { developerLog.clear() }
+                }
+                SettingsCard {
+                    SettingsCardHeader(icon: "terminal", title: "Tools", subtitle: "Nuncid only reads these. It does not store credentials.")
+                    Text("paimos · \(toolReport.paimos)").font(.callout)
+                    Text("Profiles · \(toolReport.profiles)").font(.callout)
+                    Text("gh · \(toolReport.gitHub)").font(.callout)
+                }
+                .task {
+                    toolReport = await DeveloperTools.report()
+                }
             }
         }
     }
@@ -1472,18 +1525,16 @@ struct UpdateSettingsPage: View {
             SettingsCard {
                 Toggle("Download updates automatically", isOn: $updater.automaticallyDownloads)
                     .disabled(!updater.available)
-                Picker("Check for updates", selection: Binding(
-                    get: { updater.cadence == .developing ? updater.standardCadence : updater.cadence },
-                    set: { updater.cadence = $0 }
-                )) {
-                    Text(UpdateCheckCadence.daily.title).tag(UpdateCheckCadence.daily)
-                    Text(UpdateCheckCadence.weekly.title).tag(UpdateCheckCadence.weekly)
+                Picker("Check for updates", selection: $updater.cadence) {
+                    ForEach(UpdateSchedule.visible(developerMode: updater.developerMode)) { cadence in
+                        Text(cadence.title).tag(cadence)
+                    }
                 }
                 .pickerStyle(.segmented)
-                .disabled(!updater.available || updater.cadence == .developing)
-                Text(updater.cadence == .developing
-                     ? "Checking every 5 minutes while automatic downloads are on. Option-click the menu-bar icon to return to the schedule above."
-                     : "Checks run with automatic downloads. Option-click the menu-bar icon to check every 5 minutes while shipping. The up arrow appears when an update is ready. Nuncid never restarts automatically.")
+                .disabled(!updater.available)
+                Text(updater.cadence.isTestingOnly
+                     ? "Shorter intervals are for testing only. Checks run while automatic downloads are on. The up arrow appears when an update is ready."
+                     : "Checks run while automatic downloads are on. The up arrow appears when an update is ready. Nuncid never restarts automatically.")
                     .font(.callout).foregroundStyle(.secondary)
             }
             SettingsCard {

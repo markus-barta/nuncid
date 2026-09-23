@@ -291,8 +291,9 @@ actor TicketResolver {
             for name in ["PAIMOS_URL", "PAIMOS_API_KEY", "PPM_URL", "PPMAPIKEY"] { environment.removeValue(forKey: name) }
             process.environment = environment
         }
+        let stderr = Pipe()
         process.standardOutput = stdout
-        process.standardError = FileHandle.nullDevice
+        process.standardError = stderr
         stdout.fileHandleForReading.readabilityHandler = { handle in
             let chunk = handle.availableData
             guard !chunk.isEmpty else { return }
@@ -320,9 +321,17 @@ actor TicketResolver {
         cancellationHandle.clear()
         stdout.fileHandleForReading.readabilityHandler = nil
         guard succeeded else {
+            let errorText = String(data: stderr.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+            let name = executable.lastPathComponent
+            let status = process.terminationStatus
+            Task { @MainActor in
+                let detail = DeveloperLogPolicy.sanitized(errorText)
+                DeveloperLog.shared.recordError(detail.isEmpty ? "\(name) exited \(status)" : "\(name): \(detail)")
+            }
             try? stdout.fileHandleForReading.close()
             return nil
         }
+        _ = stderr.fileHandleForReading.readDataToEndOfFile()
         let tail = stdout.fileHandleForReading.readDataToEndOfFile()
         let data = output.snapshot(appending: tail)
         return data

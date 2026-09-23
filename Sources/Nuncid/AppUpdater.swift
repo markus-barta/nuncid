@@ -3,46 +3,34 @@ import Combine
 import Sparkle
 
 enum UpdateCheckCadence: String, Equatable, CaseIterable, Identifiable {
-    case daily
     case weekly
+    case daily
+    case hourly
     case developing
 
     var id: String { rawValue }
     var title: String {
         switch self {
-        case .daily: return "Every day"
         case .weekly: return "Every week"
+        case .daily: return "Every day"
+        case .hourly: return "Every hour"
         case .developing: return "Every 5 minutes"
         }
     }
     var interval: TimeInterval {
         switch self {
-        case .daily: return 24 * 60 * 60
         case .weekly: return 7 * 24 * 60 * 60
+        case .daily: return 24 * 60 * 60
+        case .hourly: return 60 * 60
         case .developing: return 5 * 60
         }
     }
-
-    /// Option-click enters the 5-minute development cadence and restores the
-    /// previous day or week choice when clicked again.
-    func toggled(standard: Self) -> (cadence: Self, standard: Self) {
-        if self == .developing {
-            let restored = standard == .developing ? Self.daily : standard
-            return (restored, restored)
-        }
-        return (.developing, self)
-    }
+    var isTestingOnly: Bool { self == .hourly || self == .developing }
 
     static let storageKey = "updates.checkCadence"
-    static let standardStorageKey = "updates.checkCadence.standard"
 
     static func load(defaults: UserDefaults = .standard) -> Self {
         guard let raw = defaults.string(forKey: storageKey), let value = Self(rawValue: raw) else { return .daily }
-        return value
-    }
-
-    static func loadStandard(defaults: UserDefaults = .standard) -> Self {
-        guard let raw = defaults.string(forKey: standardStorageKey), let value = Self(rawValue: raw), value != .developing else { return .daily }
         return value
     }
 }
@@ -121,10 +109,16 @@ enum SignedUpdatePolicy {
             applySchedule(checkNow: false)
         }
     }
+    @Published var developerMode: Bool {
+        didSet {
+            defaults.set(developerMode, forKey: DeveloperMode.key)
+            if !developerMode, cadence.isTestingOnly { cadence = .daily }
+            else { applySchedule(checkNow: false) }
+        }
+    }
     @Published var cadence: UpdateCheckCadence {
         didSet { persistCadence(checkNow: cadence == .developing && oldValue != .developing) }
     }
-    private(set) var standardCadence: UpdateCheckCadence
     static let preferenceKey = "updates.automaticallyDownload"
     private let defaults: UserDefaults
     private var updater: SPUUpdater?
@@ -166,9 +160,10 @@ enum SignedUpdatePolicy {
     init(startingUpdater: Bool = true, defaults: UserDefaults = .standard) {
         self.defaults = defaults
         automaticallyDownloads = defaults.object(forKey: Self.preferenceKey) as? Bool ?? true
+        developerMode = DeveloperMode.enabled(defaults: defaults)
         cadence = UpdateCheckCadence.load(defaults: defaults)
-        standardCadence = UpdateCheckCadence.loadStandard(defaults: defaults)
         super.init()
+        if !developerMode, cadence.isTestingOnly { cadence = .daily }
 #if DEBUG
         if CommandLine.arguments.contains("--settings-updates-probe") {
             settingsPreview = true
@@ -200,19 +195,10 @@ enum SignedUpdatePolicy {
         catch { updater = nil; state = .unavailable; detail = "The updater could not start. Reinstall Nuncid to retry." }
     }
 
-    func toggleDevelopingChecks() {
-        let next = cadence.toggled(standard: standardCadence)
-        standardCadence = next.standard
-        defaults.set(standardCadence.rawValue, forKey: UpdateCheckCadence.standardStorageKey)
-        cadence = next.cadence
-    }
-
     private func persistCadence(checkNow: Bool) {
-        defaults.set(cadence.rawValue, forKey: UpdateCheckCadence.storageKey)
-        if cadence != .developing {
-            standardCadence = cadence
-            defaults.set(cadence.rawValue, forKey: UpdateCheckCadence.standardStorageKey)
-        }
+        let stored = developerMode || !cadence.isTestingOnly ? cadence : .daily
+        if stored != cadence { cadence = stored; return }
+        defaults.set(stored.rawValue, forKey: UpdateCheckCadence.storageKey)
         applySchedule(checkNow: checkNow)
     }
 
@@ -222,7 +208,7 @@ enum SignedUpdatePolicy {
         updater?.updateCheckInterval = cadence.interval
         developTimer?.invalidate()
         developTimer = nil
-        guard cadence == .developing, automaticallyDownloads, updater != nil else { return }
+        guard developerMode, cadence == .developing, automaticallyDownloads, updater != nil else { return }
         let timer = Timer(timeInterval: cadence.interval, repeats: true) { [weak self] _ in
             DispatchQueue.main.async { self?.updater?.checkForUpdatesInBackground() }
         }
