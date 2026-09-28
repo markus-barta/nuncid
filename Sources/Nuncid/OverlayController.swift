@@ -1235,6 +1235,18 @@ private struct OverlayRootView: View {
     func setShortcutLabel(_ label: String) { shortcutLabel = label; syncViewState() }
 #if DEBUG
     var debugShortcutLabel: String { shortcutLabel }
+
+    func debugPinFooterProbe(label: String, near: CGPoint) -> String {
+        setShortcutLabel(label)
+        showExploration([], status: "Detection on", near: near)
+        let screen = panel.screen
+        let displayID = (screen?.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value
+        let name = screen?.localizedName ?? "none"
+        let id = displayID.map(String.init) ?? "none"
+        let text = shortcutLabel
+        hide()
+        return "label=\(text) screen=\(name) id=\(id)"
+    }
 #endif
 
     private func changeZoom(_ steps: Int) {

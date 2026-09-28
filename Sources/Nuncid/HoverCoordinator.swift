@@ -291,6 +291,12 @@ enum LookupHighlightVisibilityPolicy {
         overlay.setShortcutLabel(pinShortcutLabel)
     }
 
+#if DEBUG
+    func debugPinFooterProbe(near: CGPoint) -> String {
+        overlay.debugPinFooterProbe(label: pinShortcutLabel, near: near)
+    }
+#endif
+
     func popupInteractionPreferencesDidChange() {
         guard overlay.isVisible else { return }
         refreshLookupHighlight()
