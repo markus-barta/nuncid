@@ -626,6 +626,20 @@ private actor ResolverConcurrencyProbe {
             fputs("self-test failed: honest update menu copy\n", stderr)
             exit(1)
         }
+        let newer = "260928130837.0.0"
+        let ready = MenuUpdateHeaderPolicy.production(state: .ready, latestVersion: newer, unavailableDetail: "")
+        let downloading = MenuUpdateHeaderPolicy.production(state: .downloading, latestVersion: newer, unavailableDetail: "")
+        let verifying = MenuUpdateHeaderPolicy.production(state: .verifying, latestVersion: nil, unavailableDetail: "")
+        let current = MenuUpdateHeaderPolicy.production(state: .current, latestVersion: nil, unavailableDetail: "")
+        let unavailable = MenuUpdateHeaderPolicy.production(state: .unavailable, latestVersion: nil, unavailableDetail: "Install the packaged app to enable updates.")
+        guard ready.status == "Ready to install \(newer)", ready.action == "Restart to Update",
+              downloading.status == "Downloading \(newer)", downloading.action == nil,
+              verifying.status == "Verifying", verifying.action == nil,
+              current.status == "Nuncid is up to date", current.action == "Check for Updates…",
+              unavailable.status == "Install the packaged app to enable updates.", unavailable.action == nil else {
+            fputs("self-test failed: menu update status keeps the newer version beside the action\n", stderr)
+            exit(1)
+        }
         var knownLengthBody = BoundedResponseAccumulator(maximumBytes: 4)
         var unknownLengthBody = BoundedResponseAccumulator(maximumBytes: 4)
         guard BoundedResponseAccumulator.accepts(expectedContentLength: 4, maximumBytes: 4),
