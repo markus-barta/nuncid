@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+## [260928130837.0.0] - 2026-09-28
+
+- Notice when Screen Recording does not carry over after an update.
+
 ## [260923071929.0.0] - 2026-09-23
 
 - Add Developer mode for testing update intervals and local detection notes (NUNCID-107).

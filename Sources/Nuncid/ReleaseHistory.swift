@@ -22,6 +22,20 @@ struct ReleaseNote: Identifiable, Equatable {
 enum ReleaseHistory {
     static let notes: [ReleaseNote] = [
         ReleaseNote(
+            version: "260928130837.0.0",
+            isoDate: "2026-09-28",
+            date: "28 September 2026",
+            theme: "The switch can stay on",
+            headline: "Nuncid notices when Screen Recording did not carry over.",
+            intro: "After an update, macOS can leave Nuncid allowed for a copy it no longer lets read the screen. Nuncid checks other windows and shows how to allow this version.",
+            items: [
+                ReleaseNoteItem(label: "Verify access", detail: "Settings checks whether Nuncid can see another app’s window, not only the Screen Recording switch."),
+                ReleaseNoteItem(label: "The same message everywhere", detail: "The menu, the setup guide, and the helper beside System Settings say when the approval needs to be allowed again."),
+                ReleaseNoteItem(label: "Remove the old approval", detail: "Remove Nuncid from Screen Recording, drag this version back in, and restart. Detection stays paused until that works.")
+            ],
+            versionScheme: .calendarV2
+        ),
+        ReleaseNote(
             version: "260923071929.0.0",
             isoDate: "2026-09-23",
             date: "23 September 2026",
