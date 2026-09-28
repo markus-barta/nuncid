@@ -8,6 +8,11 @@ capture_dir=$(mktemp -d)
 trap 'rm -rf "$capture_dir"' EXIT
 
 cd "$repo_dir"
+sdk=$("$repo_dir/scripts/select-swift-sdk.sh")
+if [[ -n $sdk ]]; then
+  export SDKROOT=$sdk
+  print -u2 "Building with $(basename "$SDKROOT"); the default SDK needs the SwiftUI macro plugin this toolchain does not include."
+fi
 swift build -Xswiftc -warnings-as-errors
 binary="$repo_dir/.build/debug/Nuncid"
 

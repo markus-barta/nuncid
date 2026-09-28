@@ -384,7 +384,7 @@ enum CanonicalReleaseChecker {
         case .cancelled:
             scanFeedback.dismiss()
         case .permissionRequired:
-            scanFeedback.show(message: "Screen Recording required", anchoredTo: button)
+            scanFeedback.show(message: state.permissionFlow.blockedStatus, anchoredTo: button)
         }
     }
 
@@ -411,7 +411,7 @@ enum CanonicalReleaseChecker {
         }
         menu.addItem(.separator())
 
-        addDisabledItem(state.canDetect ? state.activity : (state.screenRecordingGranted ? "Restart to finish setup" : "Screen Recording required"), to: menu)
+        addDisabledItem(state.canDetect ? state.activity : state.permissionFlow.blockedStatus, to: menu)
         addDisabledItem(state.hoverScanningEnabled ? "Detection on" : "Detection off", image: state.hoverScanningEnabled ? "circle.inset.filled" : "circle", to: menu)
         addDisabledItem("Update checks: \(state.updater.cadence.title)", image: "arrow.clockwise", to: menu)
         if let hotKeyError = state.hotKeyError {
@@ -423,7 +423,7 @@ enum CanonicalReleaseChecker {
         menu.addItem(.separator())
 
         if !state.canDetect {
-            addActionItem("Grant Screen Recording…", to: menu) { [weak state] in state?.requestScreenRecording() }
+            addActionItem(state.permissionFlow.menuActionTitle, to: menu) { [weak state] in state?.requestScreenRecording() }
             if state.permissionFlow.restartRequired {
                 addActionItem("Restart Nuncid", to: menu) { [weak state] in state?.permissionFlow.restart() }
             }

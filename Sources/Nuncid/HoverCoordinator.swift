@@ -371,7 +371,9 @@ enum LookupHighlightVisibilityPolicy {
     private func resumeDetectionIfAvailable() {
         guard detection.enabled, !exploration.automaticEnabled, menuTargetSelection == nil else { return }
         guard appState?.canDetect == true else {
-            publishDetectionState(activity: "Detection paused · Screen Recording required"); return
+            publishDetectionState(activity: appState?.permissionFlow.pausedActivity(detectionEnabled: true)
+                ?? "Detection paused · Screen Recording required")
+            return
         }
         if !NSScreen.screens.contains(where: { $0.frame.contains(detectionOrigin) }) {
             detectionOrigin = NSEvent.mouseLocation
@@ -429,7 +431,7 @@ enum LookupHighlightVisibilityPolicy {
         }
         overlay.openPinned(shortcutLabel: pinShortcutLabel)
         guard appState?.canDetect == true else {
-            overlay.showPinnedStatus("Screen Recording permission is required")
+            overlay.showPinnedStatus(appState?.permissionFlow.blockedStatus ?? "Screen Recording required")
             appState?.requestScreenRecording()
             return
         }
@@ -439,15 +441,14 @@ enum LookupHighlightVisibilityPolicy {
     private func tick() {
         overlay.updatePointerPresentation()
         if Date().timeIntervalSince(lastPermissionPollAt) >= 1 {
-            let granted = CGPreflightScreenCaptureAccess()
-            if appState?.screenRecordingGranted != granted {
-                appState?.screenRecordingGranted = granted
-                if !granted {
-                    exploration.suspend(clearAnchors: true)
-                    scanGeneration += 1; activeScanTask?.cancel(); pendingManualScan = nil
-                    clearLookupHighlight()
-                    publishDetectionState(activity: detection.enabled ? "Detection paused · Screen Recording required" : "Detection off")
-                }
+            let couldDetect = appState?.canDetect == true
+            appState?.refreshScreenRecordingAccess()
+            if couldDetect, appState?.canDetect != true {
+                exploration.suspend(clearAnchors: true)
+                scanGeneration += 1; activeScanTask?.cancel(); pendingManualScan = nil
+                clearLookupHighlight()
+                publishDetectionState(activity: appState?.permissionFlow.pausedActivity(detectionEnabled: detection.enabled)
+                    ?? "Detection paused · Screen Recording required")
             }
             lastPermissionPollAt = Date()
         }
@@ -557,8 +558,8 @@ enum LookupHighlightVisibilityPolicy {
         requiresStablePointer: Bool
     ) -> Bool {
         guard !isScanning, let plan = CapturePlan.around(position) else { return false }
+        appState?.refreshScreenRecordingAccess()
         guard appState?.canDetect == true else { return false }
-        guard CGPreflightScreenCaptureAccess() else { appState?.screenRecordingGranted = false; return false }
         let generation = scanGeneration
         let startedDirectGeneration = directGeneration
         let startedEditGeneration = pinnedEditGeneration

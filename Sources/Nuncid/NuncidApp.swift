@@ -102,7 +102,7 @@ import SwiftUI
     @Published var hotKeyError: String?
     let updater = AppUpdater()
     let permissionFlow = ScreenRecordingPermissionFlow()
-    var canDetect: Bool { screenRecordingGranted && !permissionFlow.needsGuidance }
+    var canDetect: Bool { permissionFlow.captureAllowed }
     @Published var screenRecordingGranted: Bool {
         didSet { permissionFlow.update(granted: screenRecordingGranted) }
     }
@@ -147,6 +147,11 @@ import SwiftUI
         screenRecordingGranted = permissionFlow.granted
         hotKeyMonitor = GlobalHotKeyMonitor()
         coordinator = HoverCoordinator(appState: self)
+        permissionFlow.onGrantedChange = { [weak self] granted in
+            guard let self, self.screenRecordingGranted != granted else { return }
+            self.screenRecordingGranted = granted
+        }
+        refreshScreenRecordingAccess()
         hotKeyMonitor.onCommand = { [weak self] command in
             guard let self else { return }
             switch command {
@@ -186,6 +191,12 @@ import SwiftUI
     }
     func requestScreenRecording() {
         permissionFlow.openSystemSettings()
+    }
+    func refreshScreenRecordingAccess() {
+        permissionFlow.recheckAccess()
+        if screenRecordingGranted != permissionFlow.granted {
+            screenRecordingGranted = permissionFlow.granted
+        }
     }
     func openSettings() {
         if settingsWindowController == nil { settingsWindowController = SettingsWindowController(state: self) }

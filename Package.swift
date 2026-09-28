@@ -13,6 +13,10 @@ let package = Package(
             exclude: ["Resources/calendar-version-display.json"],
             resources: [.process("Resources/Brand"), .process("Resources/Release.json"),
                         .copy("Resources/VersioningBundle")],
+            // The debug binary loads Sparkle from beside itself. Newer SwiftPM
+            // product layouts do not add @loader_path, so unpackaged tests
+            // cannot start without it. The packaged app still adds Frameworks.
+            linkerSettings: [.unsafeFlags(["-Xlinker", "-rpath", "-Xlinker", "@loader_path"])],
             plugins: [.plugin(name: "VersioningCheckPlugin")]
         ),
         .plugin(name: "VersioningCheckPlugin", capability: .buildTool())
