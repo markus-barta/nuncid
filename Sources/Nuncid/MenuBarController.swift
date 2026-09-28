@@ -469,6 +469,21 @@ enum CanonicalReleaseChecker {
         return menu
     }
 
+#if DEBUG
+    func debugMenuReport() -> String {
+        let menu = makeMenu()
+        let screen = statusItem.button?.window?.screen
+        let displayID = (screen?.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value
+        let titles = menu.items.map { item in
+            let mark = item.isEnabled ? "action" : "status"
+            return "\(mark)\t\(item.title)"
+        }
+        let name = screen?.localizedName ?? "none"
+        let id = displayID.map(String.init) ?? "none"
+        return (["screen\t\(name)\t\(id)"] + titles).joined(separator: "\n")
+    }
+#endif
+
     @discardableResult
     private func addDisabledItem(_ title: String, image: String? = nil, to menu: NSMenu) -> NSMenuItem {
         let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")

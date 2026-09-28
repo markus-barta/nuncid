@@ -533,6 +533,10 @@ import SwiftUI
         let statusItemController = NuncidStatusItemController(state: state)
         self.statusItemController = statusItemController
 #if DEBUG
+        if CommandLine.arguments.contains("--menu-update-header-probe") {
+            print(statusItemController.debugMenuReport())
+            Darwin.exit(0)
+        }
         if CommandLine.arguments.contains("--settings-window-self-test") {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
                 func settingsWindows() -> [NSWindow] { NSApp.windows.filter { $0.title.contains("Settings") } }
