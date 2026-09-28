@@ -22,6 +22,20 @@ struct ReleaseNote: Identifiable, Equatable {
 enum ReleaseHistory {
     static let notes: [ReleaseNote] = [
         ReleaseNote(
+            version: "260928165459.0.0",
+            isoDate: "2026-09-28",
+            date: "28 September 2026",
+            theme: "The version stays visible",
+            headline: "The menu names the update and what it is doing.",
+            intro: "Under the installed version, Nuncid keeps a status line for checking, downloading, verifying, and ready. That line includes the newer version.",
+            items: [
+                ReleaseNoteItem(label: "Status stays put", detail: "Check for Updates no longer replaces the update status."),
+                ReleaseNoteItem(label: "The version in progress", detail: "Downloading, verifying, and ready name the version being installed."),
+                ReleaseNoteItem(label: "Restart stays separate", detail: "Restart to Update remains its own action once the update is verified.")
+            ],
+            versionScheme: .calendarV2
+        ),
+        ReleaseNote(
             version: "260928130837.0.0",
             isoDate: "2026-09-28",
             date: "28 September 2026",

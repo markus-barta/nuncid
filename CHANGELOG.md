@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+## [260928165459.0.0] - 2026-09-28
+
+- Show the newer version beside the menu update status.
+
 ## [260928130837.0.0] - 2026-09-28
 
 - Notice when Screen Recording does not carry over after an update.
