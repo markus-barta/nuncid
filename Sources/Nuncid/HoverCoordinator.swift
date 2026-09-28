@@ -196,6 +196,7 @@ enum LookupHighlightVisibilityPolicy {
         overlay = OverlayController()
 #endif
         overlay.configurePermissionGuide(appState.permissionFlow)
+        overlay.setShortcutLabel(pinShortcutLabel)
         overlay.onCycleProject = { [weak self] direction in self?.cycleProject(direction) }
         overlay.onClose = { [weak self] in self?.closePinned() }
         overlay.onInput = { [weak self] event in self?.handleInput(event) }
@@ -286,6 +287,10 @@ enum LookupHighlightVisibilityPolicy {
         Task { await resolver.clearCache() }
     }
 
+    func refreshPinShortcutLabel() {
+        overlay.setShortcutLabel(pinShortcutLabel)
+    }
+
     func popupInteractionPreferencesDidChange() {
         guard overlay.isVisible else { return }
         refreshLookupHighlight()
@@ -326,8 +331,8 @@ enum LookupHighlightVisibilityPolicy {
         scanGeneration += 1; directGeneration += 1
         activeScanTask?.cancel(); pendingManualScan = nil
         resetEditing(); clearManualInspection(); clearLookupHighlight()
-        if !overlay.isVisible { overlay.showExploration([], status: "Detection on · Point at an ID", near: point) }
         overlay.setShortcutLabel(pinShortcutLabel)
+        if !overlay.isVisible { overlay.showExploration([], status: "Detection on · Point at an ID", near: point) }
         publishDetectionState(activity: "Detection on · Point at an ID")
         if waitForTarget || !eligibleDetectionTarget(point) { armDetectionTarget() }
         else { resumeDetectionIfAvailable() }

@@ -1233,6 +1233,9 @@ private struct OverlayRootView: View {
         if viewState.detectionEnabled != enabled { viewState.detectionEnabled = enabled }
     }
     func setShortcutLabel(_ label: String) { shortcutLabel = label; syncViewState() }
+#if DEBUG
+    var debugShortcutLabel: String { shortcutLabel }
+#endif
 
     private func changeZoom(_ steps: Int) {
         zoom = steps == 0 ? InspectionZoom() : zoom.changed(by: steps)

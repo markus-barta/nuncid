@@ -98,7 +98,7 @@ import SwiftUI
         }
     }
     @Published var inspectHotKey: HotKey? { didSet { NuncidPreferences.save(inspectHotKey, key: "inspectHotKey"); configureHotKeys() } }
-    @Published var pinHotKey: HotKey? { didSet { NuncidPreferences.save(pinHotKey, key: "pinHotKey"); configureHotKeys() } }
+    @Published var pinHotKey: HotKey? { didSet { NuncidPreferences.save(pinHotKey, key: "pinHotKey"); configureHotKeys(); coordinator?.refreshPinShortcutLabel() } }
     @Published var hotKeyError: String?
     let updater = AppUpdater()
     let permissionFlow = ScreenRecordingPermissionFlow()

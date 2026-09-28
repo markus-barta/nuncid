@@ -84,6 +84,11 @@ import Darwin
         overlay.configurePermissionGuide(ready)
         check(!overlay.debugPermissionGuideVisible, "ready session uses normal inspection UI")
         overlay.hide()
+        let labeled = OverlayController()
+        labeled.setShortcutLabel("F19")
+        labeled.showExploration([], status: "Detection on", near: .zero)
+        check(labeled.debugShortcutLabel == "F19", "exploration footer keeps the saved pin shortcut")
+        labeled.hide()
 #endif
         let main = CGRect(x: 0, y: 0, width: 1440, height: 900)
         let settings = CGRect(x: 350, y: 300, width: 720, height: 600)
