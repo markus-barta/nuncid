@@ -89,6 +89,41 @@ enum MenuUpdateHeaderPolicy {
     static func titles(installedVersion: String, updateState: AppUpdateState) -> [String] {
         ["Nuncid version \(installedVersion)", updateState.menuTitle]
     }
+
+    /// The menu always shows the installed version, then this status line.
+    /// The action, when present, is the Sparkle check or restart and does not
+    /// replace the status.
+    static func production(state: DownloadUpdateState, latestVersion: String?, unavailableDetail: String) -> (status: String, action: String?) {
+        let status: String
+        switch state {
+        case .idle: status = "Update not checked yet"
+        case .checking: status = "Checking for updates…"
+        case .downloading: status = labeled("Downloading", latestVersion)
+        case .verifying: status = labeled("Verifying", latestVersion)
+        case .ready: status = labeled("Ready to install", latestVersion)
+        case .installing: status = labeled("Restarting to install", latestVersion)
+        case .current: status = "Nuncid is up to date"
+        case .checkFailed: status = "Update check failed"
+        case .failed: status = labeled("Update failed", latestVersion)
+        case .unavailable:
+            let detail = unavailableDetail.trimmingCharacters(in: .whitespacesAndNewlines)
+            status = detail.isEmpty ? "Updates unavailable" : detail
+        }
+        let action: String?
+        switch state {
+        case .ready: action = "Restart to Update"
+        case .idle, .current: action = "Check for Updates…"
+        case .checkFailed: action = "Retry Update Check"
+        case .failed: action = "Retry Update"
+        case .checking, .downloading, .verifying, .installing, .unavailable: action = nil
+        }
+        return (status, action)
+    }
+
+    private static func labeled(_ label: String, _ version: String?) -> String {
+        guard let version, !version.isEmpty else { return label }
+        return "\(label) \(version)"
+    }
 }
 
 private struct GitHubReleasePayload: Decodable {
@@ -403,11 +438,10 @@ enum CanonicalReleaseChecker {
         installedItem.attributedTitle = VersionDisplay.attributed(NuncidBrand.version, scheme: NuncidBrand.versionScheme,
             prefix: "Nuncid version ", font: .monospacedSystemFont(ofSize: 13, weight: .regular))
         let update = state.updater
-        if update.canAct {
-            let title = update.state == .current ? "Check for Updates…" : update.state.title
-            addActionItem(title, to: menu) { [weak update] in update?.performAction() }
-        } else {
-            addDisabledItem(update.state.title, to: menu)
+        let updateRow = MenuUpdateHeaderPolicy.production(state: update.state, latestVersion: update.latestVersion, unavailableDetail: update.detail)
+        addDisabledItem(updateRow.status, to: menu)
+        if let action = updateRow.action, update.canAct {
+            addActionItem(action, to: menu) { [weak update] in update?.performAction() }
         }
         menu.addItem(.separator())
 
@@ -434,6 +468,21 @@ enum CanonicalReleaseChecker {
         addActionItem("Quit Nuncid", keyEquivalent: "q", to: menu) { NSApp.terminate(nil) }
         return menu
     }
+
+#if DEBUG
+    func debugMenuReport() -> String {
+        let menu = makeMenu()
+        let screen = statusItem.button?.window?.screen
+        let displayID = (screen?.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value
+        let titles = menu.items.map { item in
+            let mark = item.isEnabled ? "action" : "status"
+            return "\(mark)\t\(item.title)"
+        }
+        let name = screen?.localizedName ?? "none"
+        let id = displayID.map(String.init) ?? "none"
+        return (["screen\t\(name)\t\(id)"] + titles).joined(separator: "\n")
+    }
+#endif
 
     @discardableResult
     private func addDisabledItem(_ title: String, image: String? = nil, to menu: NSMenu) -> NSMenuItem {
