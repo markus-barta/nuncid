@@ -10,6 +10,8 @@ import SwiftUI
     @Published private(set) var verification: ScreenRecordingVerification?
     @Published var error: String?
     let appURL: URL?
+    var onGrantedChange: ((Bool) -> Void)?
+    private var consecutiveStaleSamples = 0
     private var helper: PermissionHelperController?
     private let restarter = PermissionRestarter()
     var needsGuidance: Bool { !granted || access == .stale || restartRequired }
@@ -51,33 +53,63 @@ import SwiftUI
     }
 
     func recheckAccess() {
-        let preflight = CGPreflightScreenCaptureAccess()
-        record(preflightGranted: preflight, access: ScreenCaptureAccessPolicy.verdict(
-            preflightGranted: preflight,
-            windows: ScreenCaptureAccessProbe.currentWindows(),
-            ownPID: ProcessInfo.processInfo.processIdentifier
-        ))
+        sampleAccess(confirmStaleImmediately: false)
     }
 
     func verifyAccess() {
         error = nil
-        recheckAccess()
+        sampleAccess(confirmStaleImmediately: true)
         noteVerification()
+    }
+
+    /// A background poll waits for two stale samples so one untitled window
+    /// cannot pause detection or offer to remove a working grant. Verify access
+    /// is an explicit check and commits the result immediately.
+    func applyLiveVerdict(_ next: ScreenRecordingAccess, preflightGranted: Bool, confirmStaleImmediately: Bool) {
+        let committed: ScreenRecordingAccess
+        if next == .stale {
+            consecutiveStaleSamples += 1
+            if confirmStaleImmediately || consecutiveStaleSamples >= 2 || access == .stale {
+                committed = .stale
+            } else {
+                committed = access == .missing ? .unconfirmed : access
+            }
+        } else {
+            consecutiveStaleSamples = 0
+            committed = next
+        }
+        record(preflightGranted: preflightGranted, access: committed)
     }
 
     func noteVerification() {
         switch access {
         case .ready: verification = .confirmed
         case .unconfirmed: verification = .needAnotherWindow
-        case .stale, .missing: verification = nil
+        case .stale: verification = .stillBlocked
+        case .missing: verification = nil
         }
     }
 
     func record(preflightGranted: Bool, access next: ScreenRecordingAccess) {
         if access != next, next == .stale || next == .missing { verification = nil }
+        let changedGrant = granted != preflightGranted
         granted = preflightGranted
         access = next
         if next == .ready { restartRequired = false }
+        if changedGrant { onGrantedChange?(granted) }
+    }
+
+    private func sampleAccess(confirmStaleImmediately: Bool) {
+        let preflight = CGPreflightScreenCaptureAccess()
+        applyLiveVerdict(
+            ScreenCaptureAccessPolicy.verdict(
+                preflightGranted: preflight,
+                windows: ScreenCaptureAccessProbe.currentWindows(),
+                ownPID: ProcessInfo.processInfo.processIdentifier
+            ),
+            preflightGranted: preflight,
+            confirmStaleImmediately: confirmStaleImmediately
+        )
     }
 
     func removeStaleApproval() {
@@ -299,8 +331,10 @@ enum PermissionHelperPlacement {
 }
 
 @MainActor final class PermissionHelperController: NSWindowController {
+    private let flow: ScreenRecordingPermissionFlow
     private var placementTimer: Timer?
     init(flow: ScreenRecordingPermissionFlow) {
+        self.flow = flow
         let height: CGFloat = flow.access == .stale ? 230 : 192
         let panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 450, height: height),
                             styleMask: [.titled, .closable, .nonactivatingPanel], backing: .buffered, defer: false)
@@ -314,6 +348,11 @@ enum PermissionHelperPlacement {
     }
     required init?(coder: NSCoder) { nil }
     func show() {
+        if flow.access == .stale, var frame = window?.frame, frame.height < 220 {
+            frame.origin.y -= 230 - frame.height
+            frame.size.height = 230
+            window?.setFrame(frame, display: false)
+        }
         place()
         window?.orderFrontRegardless()
         placementTimer?.invalidate()

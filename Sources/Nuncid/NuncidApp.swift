@@ -147,6 +147,10 @@ import SwiftUI
         screenRecordingGranted = permissionFlow.granted
         hotKeyMonitor = GlobalHotKeyMonitor()
         coordinator = HoverCoordinator(appState: self)
+        permissionFlow.onGrantedChange = { [weak self] granted in
+            guard let self, self.screenRecordingGranted != granted else { return }
+            self.screenRecordingGranted = granted
+        }
         refreshScreenRecordingAccess()
         hotKeyMonitor.onCommand = { [weak self] command in
             guard let self else { return }

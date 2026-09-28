@@ -61,6 +61,18 @@ import Darwin
         check(unconfirmed.verification == .confirmed, "verify confirms a live grant")
         unconfirmed.record(preflightGranted: true, access: .stale)
         check(unconfirmed.verification == nil, "a stale result clears a previous confirmation")
+        unconfirmed.noteVerification()
+        check(unconfirmed.verification == .stillBlocked, "verify explains a confirmed stale grant")
+        let held = ScreenRecordingPermissionFlow(granted: true, appURL: nil)
+        held.record(preflightGranted: true, access: .ready)
+        held.applyLiveVerdict(.stale, preflightGranted: true, confirmStaleImmediately: false)
+        check(held.access == .ready && held.captureAllowed, "one stale sample keeps a working grant")
+        held.applyLiveVerdict(.stale, preflightGranted: true, confirmStaleImmediately: false)
+        check(held.access == .stale && !held.captureAllowed, "a second stale sample blocks detection")
+        let explicit = ScreenRecordingPermissionFlow(granted: true, appURL: nil)
+        explicit.record(preflightGranted: true, access: .ready)
+        explicit.applyLiveVerdict(.stale, preflightGranted: true, confirmStaleImmediately: true)
+        check(explicit.access == .stale, "verify access commits one stale sample")
         check(ScreenRecordingApprovalReset.arguments(bundleIdentifier: AppIdentity.bundleIdentifier) == ["reset", "ScreenCapture", AppIdentity.bundleIdentifier],
               "approval reset targets only this app's screen recording entry")
 #if DEBUG

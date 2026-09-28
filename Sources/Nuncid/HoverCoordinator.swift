@@ -559,10 +559,7 @@ enum LookupHighlightVisibilityPolicy {
     ) -> Bool {
         guard !isScanning, let plan = CapturePlan.around(position) else { return false }
         appState?.refreshScreenRecordingAccess()
-        guard appState?.canDetect == true else {
-            if source != .automaticHover { appState?.requestScreenRecording() }
-            return false
-        }
+        guard appState?.canDetect == true else { return false }
         let generation = scanGeneration
         let startedDirectGeneration = directGeneration
         let startedEditGeneration = pinnedEditGeneration

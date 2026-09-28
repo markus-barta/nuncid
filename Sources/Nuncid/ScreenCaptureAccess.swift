@@ -114,11 +114,13 @@ enum ScreenRecordingAccessCopy {
 enum ScreenRecordingVerification: Equatable {
     case confirmed
     case needAnotherWindow
+    case stillBlocked
 
     var message: String {
         switch self {
         case .confirmed: return "Access confirmed."
         case .needAnotherWindow: return "Open another app’s window, then verify again."
+        case .stillBlocked: return "This version still can’t see other windows."
         }
     }
 }

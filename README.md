@@ -226,7 +226,7 @@ swift build
 open dist/Nuncid.app
 ```
 
-The packaging script stages `dist/Nuncid.app` outside SwiftPM's cleanable build directory. It derives the build number from Git history and, by default, applies a stable local designated requirement so the ad-hoc identity stays the same across rebuilds. macOS can still leave the Screen Recording switch on for a binary it no longer authorizes; Nuncid compares other windows' titles, then asks you to remove Nuncid and allow it again. Developer ID signing is what makes that grant follow an update. The package records whether it was signed locally or with Developer ID; signature verification is not presented as notarization.
+The packaging script stages `dist/Nuncid.app` outside SwiftPM's cleanable build directory. It derives the build number from Git history and, by default, applies a stable local designated requirement so the ad-hoc identity stays the same across rebuilds. macOS can still leave the Screen Recording switch on for a binary it no longer authorizes; Nuncid compares other windows' titles, then asks you to remove Nuncid and allow it again. Developer ID signing is what makes that grant follow an update. If the default SDK needs the SwiftUI macro plugin and the selected toolchain does not include it, tests and packaging build against the newest older SDK that still declares `@State` as a type. Xcode’s toolchain plugin keeps the default SDK. The package records whether it was signed locally or with Developer ID; signature verification is not presented as notarization.
 
 All menu-bar states use native monochrome template rendering: macOS chooses
 contrast for the current menu-bar background and menu highlighting. Hover and
