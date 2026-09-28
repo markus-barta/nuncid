@@ -2,6 +2,11 @@
 set -euo pipefail
 repo_dir=${0:A:h:h}
 cd "$repo_dir"
+sdk=$("$repo_dir/scripts/select-swift-sdk.sh")
+if [[ -n $sdk ]]; then
+  export SDKROOT=$sdk
+  print -u2 "Building with $(basename "$SDKROOT"); the default SDK needs the SwiftUI macro plugin this toolchain does not include."
+fi
 swift build -Xswiftc -warnings-as-errors
 "$repo_dir/scripts/check-release-consistency.sh"
 python3 "$repo_dir/scripts/test-release-policy.py"

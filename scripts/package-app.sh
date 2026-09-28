@@ -15,6 +15,11 @@ bundle_version=$(python3 "$repo_dir/scripts/release-policy.py" field bundle_shor
 version_scheme=$(python3 "$repo_dir/scripts/release-policy.py" field version_scheme)
 release_sequence=$(python3 "$repo_dir/scripts/release-policy.py" field release_sequence)
 build_number=$(git -C "$repo_dir" rev-list --count HEAD)
+sdk=$("$repo_dir/scripts/select-swift-sdk.sh")
+if [[ -n $sdk ]]; then
+  export SDKROOT=$sdk
+  print -u2 "Building with $(basename "$SDKROOT"); the default SDK needs the SwiftUI macro plugin this toolchain does not include."
+fi
 swift build -c "$configuration" -Xswiftc -warnings-as-errors
 binary_dir=$(cd "$repo_dir" && swift build -c "$configuration" --show-bin-path)
 app_dir="$repo_dir/dist/Nuncid.app"

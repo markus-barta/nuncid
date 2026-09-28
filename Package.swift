@@ -13,6 +13,7 @@ let package = Package(
             exclude: ["Resources/calendar-version-display.json"],
             resources: [.process("Resources/Brand"), .process("Resources/Release.json"),
                         .copy("Resources/VersioningBundle")],
+            linkerSettings: [.unsafeFlags(["-Xlinker", "-rpath", "-Xlinker", "@loader_path"])],
             plugins: [.plugin(name: "VersioningCheckPlugin")]
         ),
         .plugin(name: "VersioningCheckPlugin", capability: .buildTool())

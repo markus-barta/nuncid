@@ -18,6 +18,51 @@ import Darwin
         check(!restarted.needsGuidance, "fresh process uses granted permission")
         restarted.update(granted: false)
         check(restarted.needsGuidance, "revocation replaces detection UI")
+        let own = Int32(42)
+        func window(_ pid: Int32, _ layer: Int, _ name: ScreenCaptureWindowName) -> ScreenCaptureWindowRecord {
+            ScreenCaptureWindowRecord(ownerPID: pid, layer: layer, name: name)
+        }
+        check(ScreenCaptureAccessPolicy.verdict(preflightGranted: false, windows: [window(7, 0, .titled)], ownPID: own) == .missing,
+              "preflight denial ignores visible window titles")
+        check(ScreenCaptureAccessPolicy.verdict(preflightGranted: true, windows: [window(7, 0, .titled)], ownPID: own) == .ready,
+              "another app's window title confirms access")
+        check(ScreenCaptureAccessPolicy.verdict(preflightGranted: true, windows: [window(7, 0, .absent), window(8, 0, .titled)], ownPID: own) == .ready,
+              "one visible foreign title outweighs a stripped window")
+        check(ScreenCaptureAccessPolicy.verdict(preflightGranted: true, windows: [window(7, 0, .absent), window(own, 0, .titled)], ownPID: own) == .stale,
+              "stripped foreign titles are a stale grant")
+        check(ScreenCaptureAccessPolicy.verdict(preflightGranted: true, windows: [window(7, 0, .empty)], ownPID: own) == .ready,
+              "an untitled window that still publishes its name means access works")
+        check(ScreenCaptureAccessPolicy.verdict(preflightGranted: true, windows: [window(7, 3, .absent), window(own, 0, .titled)], ownPID: own) == .unconfirmed,
+              "menu-bar windows and our own titles do not prove or deny access")
+        check(ScreenCaptureAccessPolicy.verdict(preflightGranted: true, windows: [], ownPID: own) == .unconfirmed,
+              "no other windows leaves the grant unconfirmed")
+        let stale = ScreenRecordingPermissionFlow(granted: true, appURL: nil)
+        stale.settingsOpened()
+        stale.record(preflightGranted: true, access: .stale)
+        check(stale.granted && stale.needsGuidance && !stale.captureAllowed && stale.restartRequired, "stale grant blocks detection")
+        check(stale.blockedStatus == "Screen Recording needs to be allowed again", "stale grant names the menu and toast status")
+        check(stale.menuActionTitle == "Allow Screen Recording Again…", "stale grant asks to allow screen recording again")
+        check(ScreenRecordingAccessCopy.settingsTitle(access: .stale, restartRequired: false) == "Screen Recording needs to be allowed again",
+              "settings names a stale grant")
+        check(stale.pausedActivity(detectionEnabled: true) == "Detection paused · Screen Recording needs to be allowed again",
+              "detection pauses with the stale-grant reason")
+        stale.record(preflightGranted: true, access: .ready)
+        check(stale.captureAllowed && !stale.needsGuidance && !stale.restartRequired, "confirmed access clears the restart wait")
+        check(ScreenRecordingAccessCopy.settingsTitle(access: .ready, restartRequired: false) == "Screen Recording is allowed",
+              "confirmed access keeps the allowed title")
+        check(ScreenRecordingAccessCopy.settingsDetail(access: .ready, restartRequired: false) == "Nuncid is ready to recognize references on your screen.",
+              "confirmed access keeps the ready detail")
+        let unconfirmed = ScreenRecordingPermissionFlow(granted: true, appURL: nil)
+        unconfirmed.record(preflightGranted: true, access: .unconfirmed)
+        unconfirmed.noteVerification()
+        check(unconfirmed.verification == .needAnotherWindow, "verify asks for another window when nothing can be compared")
+        unconfirmed.record(preflightGranted: true, access: .ready)
+        unconfirmed.noteVerification()
+        check(unconfirmed.verification == .confirmed, "verify confirms a live grant")
+        unconfirmed.record(preflightGranted: true, access: .stale)
+        check(unconfirmed.verification == nil, "a stale result clears a previous confirmation")
+        check(ScreenRecordingApprovalReset.arguments(bundleIdentifier: AppIdentity.bundleIdentifier) == ["reset", "ScreenCapture", AppIdentity.bundleIdentifier],
+              "approval reset targets only this app's screen recording entry")
 #if DEBUG
         let overlay = OverlayController()
         overlay.configurePermissionGuide(flow)

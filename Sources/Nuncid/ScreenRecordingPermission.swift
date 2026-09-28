@@ -3,22 +3,103 @@ import SwiftUI
 
 @MainActor final class ScreenRecordingPermissionFlow: ObservableObject {
     @Published private(set) var granted: Bool
+    @Published private(set) var access: ScreenRecordingAccess
     @Published private(set) var restartRequired = false
     @Published private(set) var restarting = false
+    @Published private(set) var removingApproval = false
+    @Published private(set) var verification: ScreenRecordingVerification?
     @Published var error: String?
     let appURL: URL?
     private var helper: PermissionHelperController?
     private let restarter = PermissionRestarter()
-    var needsGuidance: Bool { !granted || restartRequired }
+    var needsGuidance: Bool { !granted || access == .stale || restartRequired }
+    var captureAllowed: Bool { !needsGuidance }
+    var blockedStatus: String {
+        switch access {
+        case .stale: return "Screen Recording needs to be allowed again"
+        case .missing: return "Screen Recording required"
+        case .ready, .unconfirmed: return "Restart to finish setup"
+        }
+    }
+    var menuActionTitle: String {
+        access == .stale ? "Allow Screen Recording Again…" : "Grant Screen Recording…"
+    }
 
     init(granted: Bool = CGPreflightScreenCaptureAccess(), appURL: URL? = AppRelaunch.bundleURL()) {
         self.granted = granted
+        self.access = granted ? .unconfirmed : .missing
         self.appURL = appURL
     }
 
     func update(granted: Bool) {
         guard self.granted != granted else { return }
         self.granted = granted
+        if granted {
+            if access == .missing { access = .unconfirmed }
+        } else {
+            access = .missing
+        }
+    }
+
+    func pausedActivity(detectionEnabled: Bool) -> String {
+        guard detectionEnabled else { return "Detection off" }
+        switch access {
+        case .stale: return "Detection paused · Screen Recording needs to be allowed again"
+        case .missing: return "Detection paused · Screen Recording required"
+        case .ready, .unconfirmed: return "Detection paused · Restart to finish setup"
+        }
+    }
+
+    func recheckAccess() {
+        let preflight = CGPreflightScreenCaptureAccess()
+        record(preflightGranted: preflight, access: ScreenCaptureAccessPolicy.verdict(
+            preflightGranted: preflight,
+            windows: ScreenCaptureAccessProbe.currentWindows(),
+            ownPID: ProcessInfo.processInfo.processIdentifier
+        ))
+    }
+
+    func verifyAccess() {
+        error = nil
+        recheckAccess()
+        noteVerification()
+    }
+
+    func noteVerification() {
+        switch access {
+        case .ready: verification = .confirmed
+        case .unconfirmed: verification = .needAnotherWindow
+        case .stale, .missing: verification = nil
+        }
+    }
+
+    func record(preflightGranted: Bool, access next: ScreenRecordingAccess) {
+        if access != next, next == .stale || next == .missing { verification = nil }
+        granted = preflightGranted
+        access = next
+        if next == .ready { restartRequired = false }
+    }
+
+    func removeStaleApproval() {
+        guard access == .stale, !removingApproval else { return }
+        error = nil
+        removingApproval = true
+        let bundleIdentifier = Bundle.main.bundleIdentifier ?? AppIdentity.bundleIdentifier
+        Task { [weak self] in
+            let outcome = await Task.detached {
+                ScreenRecordingApprovalReset.run(bundleIdentifier: bundleIdentifier)
+            }.value
+            guard let self else { return }
+            self.removingApproval = false
+            switch outcome {
+            case .removed:
+                self.record(preflightGranted: false, access: .missing)
+                self.openSystemSettings()
+            case .failed:
+                self.openSystemSettings()
+                self.error = "Couldn’t remove the old approval. In Screen Recording, select Nuncid and click the minus button."
+            }
+        }
     }
 
     func openSystemSettings() {
@@ -53,28 +134,62 @@ struct PermissionGuideView: View {
             VStack(alignment: .leading, spacing: 22) {
                 HStack(alignment: .top) {
                     VStack(alignment: .leading, spacing: 6) {
-                        Text("Let Nuncid read your screen").font(.system(size: 25, weight: .bold))
-                        Text("One-time setup. Screen content stays on your Mac.")
+                        Text(flow.access == .stale ? "Let Nuncid read your screen again" : "Let Nuncid read your screen")
+                            .font(.system(size: 25, weight: .bold))
+                        Text(flow.access == .stale
+                             ? "macOS kept an approval that doesn’t apply to this version. Screen content stays on your Mac."
+                             : "One-time setup. Screen content stays on your Mac.")
                             .font(.callout).foregroundStyle(.secondary)
                     }
                     Spacer(minLength: 8)
                     Button(action: onClose) { Image(systemName: "xmark") }
                         .buttonStyle(.plain).accessibilityLabel("Close setup")
                 }
-                step(1, title: "Open Screen Recording") {
-                    Button("Open System Settings…") { flow.openSystemSettings() }
-                        .buttonStyle(.borderedProminent).controlSize(.large)
+                if flow.access == .stale {
+                    step(1, title: "Remove the old approval") {
+                        Text("In Screen Recording, select Nuncid and click the minus button. The switch can look on while this version still can’t see other windows.")
+                            .foregroundStyle(.secondary)
+                        HStack {
+                            Button(flow.removingApproval ? "Removing…" : "Remove old approval") { flow.removeStaleApproval() }
+                                .disabled(flow.removingApproval)
+                            Button("Open System Settings…") { flow.openSystemSettings() }
+                        }
+                    }
+                    step(2, title: "Add this version") {
+                        Text("Drag Nuncid back into Screen Recording, then turn its switch on.")
+                            .foregroundStyle(.secondary)
+                        PermissionAppTile(appURL: flow.appURL)
+                    }
+                    step(3, title: "Restart Nuncid") {
+                        Text("After the new approval is on, restart. Then verify that other windows are visible.")
+                            .foregroundStyle(.secondary)
+                        HStack {
+                            Button(flow.restarting ? "Restarting…" : "Restart Nuncid") { flow.restart() }
+                                .buttonStyle(.bordered).controlSize(.large).disabled(flow.restarting)
+                            Button("Verify access") { flow.verifyAccess() }
+                                .buttonStyle(.bordered).controlSize(.large)
+                        }
+                    }
+                } else {
+                    step(1, title: "Open Screen Recording") {
+                        Button("Open System Settings…") { flow.openSystemSettings() }
+                            .buttonStyle(.borderedProminent).controlSize(.large)
+                    }
+                    step(2, title: "Drag Nuncid into the list") {
+                        Text("Drop the app into Screen Recording, then turn its switch on.")
+                            .foregroundStyle(.secondary)
+                        PermissionAppTile(appURL: flow.appURL)
+                    }
+                    step(3, title: "Restart Nuncid") {
+                        Text(flow.granted ? "Access detected. Restart to finish setup." : "After enabling access, restart to apply it.")
+                            .foregroundStyle(.secondary)
+                        Button(flow.restarting ? "Restarting…" : "Restart Nuncid") { flow.restart() }
+                            .buttonStyle(.bordered).controlSize(.large).disabled(flow.restarting)
+                    }
                 }
-                step(2, title: "Drag Nuncid into the list") {
-                    Text("Drop the app into Screen Recording, then turn its switch on.")
-                        .foregroundStyle(.secondary)
-                    PermissionAppTile(appURL: flow.appURL)
-                }
-                step(3, title: "Restart Nuncid") {
-                    Text(flow.granted ? "Access detected. Restart to finish setup." : "After enabling access, restart to apply it.")
-                        .foregroundStyle(.secondary)
-                    Button(flow.restarting ? "Restarting…" : "Restart Nuncid") { flow.restart() }
-                        .buttonStyle(.bordered).controlSize(.large).disabled(flow.restarting)
+                if let verification = flow.verification {
+                    Text(verification.message).font(.callout)
+                        .foregroundStyle(verification == .confirmed ? Color.green : Color.secondary)
                 }
                 if let error = flow.error { Text(error).font(.callout).foregroundStyle(.red).fixedSize(horizontal: false, vertical: true) }
             }
@@ -186,7 +301,8 @@ enum PermissionHelperPlacement {
 @MainActor final class PermissionHelperController: NSWindowController {
     private var placementTimer: Timer?
     init(flow: ScreenRecordingPermissionFlow) {
-        let panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 450, height: 192),
+        let height: CGFloat = flow.access == .stale ? 230 : 192
+        let panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 450, height: height),
                             styleMask: [.titled, .closable, .nonactivatingPanel], backing: .buffered, defer: false)
         panel.title = "Allow Nuncid"
         panel.level = .floating
@@ -232,11 +348,16 @@ private struct PermissionHelperView: View {
     var body: some View {
         ScrollView {
         VStack(alignment: .leading, spacing: 10) {
-            Text("Drag Nuncid into Screen Recording").font(.headline)
+            Text(flow.access == .stale ? "Remove Nuncid, then drag it back in" : "Drag Nuncid into Screen Recording").font(.headline)
             PermissionAppTile(appURL: flow.appURL)
             HStack {
-                Text("Turn its switch on, then restart.").font(.callout).foregroundStyle(.secondary)
+                Text(flow.access == .stale ? "Remove the old row, turn the switch on, then restart." : "Turn its switch on, then restart.")
+                    .font(.callout).foregroundStyle(.secondary)
                 Spacer()
+                if flow.access == .stale {
+                    Button(flow.removingApproval ? "Removing…" : "Remove old approval") { flow.removeStaleApproval() }
+                        .disabled(flow.removingApproval)
+                }
                 Button(flow.restarting ? "Restarting…" : "Restart Nuncid") { flow.restart() }.disabled(flow.restarting)
             }
             if let error = flow.error { Text(error).font(.caption).foregroundStyle(.red) }
@@ -253,17 +374,29 @@ struct PermissionPrivacyStatus: View {
                 .font(.system(size: 34)).symbolRenderingMode(.hierarchical)
                 .foregroundStyle(flow.needsGuidance ? Color.orange : Color.green)
             VStack(alignment: .leading, spacing: 8) {
-                Text(flow.needsGuidance ? (flow.granted ? "Restart to finish setup" : "Allow Screen Recording") : "Screen Recording is allowed")
+                Text(ScreenRecordingAccessCopy.settingsTitle(access: flow.access, restartRequired: flow.restartRequired))
                     .font(.headline)
-                Text(flow.needsGuidance ? "Open settings, drag Nuncid into the list, enable it, then restart." : "Nuncid is ready to recognize references on your screen.")
+                Text(ScreenRecordingAccessCopy.settingsDetail(access: flow.access, restartRequired: flow.restartRequired))
                     .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-                if flow.needsGuidance {
-                    HStack {
+                HStack {
+                    if flow.needsGuidance {
                         Button("Open System Settings…") { flow.openSystemSettings() }
+                        if flow.access == .stale {
+                            Button(flow.removingApproval ? "Removing…" : "Remove old approval") { flow.removeStaleApproval() }
+                                .disabled(flow.removingApproval)
+                        }
                         if flow.restartRequired {
                             Button(flow.restarting ? "Restarting…" : "Restart Nuncid") { flow.restart() }.disabled(flow.restarting)
                         }
                     }
+                    if flow.access != .missing {
+                        Button("Verify access") { flow.verifyAccess() }
+                            .help("Check whether Nuncid can see other windows, not only the Screen Recording switch.")
+                    }
+                }
+                if let verification = flow.verification {
+                    Text(verification.message).font(.callout)
+                        .foregroundStyle(verification == .confirmed ? Color.green : Color.secondary)
                 }
                 if let error = flow.error { Text(error).font(.callout).foregroundStyle(.red) }
             }
