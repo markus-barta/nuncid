@@ -22,6 +22,19 @@ struct ReleaseNote: Identifiable, Equatable {
 enum ReleaseHistory {
     static let notes: [ReleaseNote] = [
         ReleaseNote(
+            version: "260928194621.0.0",
+            isoDate: "2026-09-28",
+            date: "28 September 2026",
+            theme: "Your pin shortcut",
+            headline: "A new card shows the pin shortcut you saved.",
+            intro: "The temporary footer uses the pin shortcut from Settings as soon as the card appears.",
+            items: [
+                ReleaseNoteItem(label: "No default hint", detail: "Option-Shift-Space appears only when that is the shortcut you saved."),
+                ReleaseNoteItem(label: "It stays current", detail: "Changing the pin shortcut updates the label on the open card.")
+            ],
+            versionScheme: .calendarV2
+        ),
+        ReleaseNote(
             version: "260928165459.0.0",
             isoDate: "2026-09-28",
             date: "28 September 2026",

@@ -98,7 +98,7 @@ import SwiftUI
         }
     }
     @Published var inspectHotKey: HotKey? { didSet { NuncidPreferences.save(inspectHotKey, key: "inspectHotKey"); configureHotKeys() } }
-    @Published var pinHotKey: HotKey? { didSet { NuncidPreferences.save(pinHotKey, key: "pinHotKey"); configureHotKeys() } }
+    @Published var pinHotKey: HotKey? { didSet { NuncidPreferences.save(pinHotKey, key: "pinHotKey"); configureHotKeys(); coordinator?.refreshPinShortcutLabel() } }
     @Published var hotKeyError: String?
     let updater = AppUpdater()
     let permissionFlow = ScreenRecordingPermissionFlow()
@@ -256,6 +256,7 @@ import SwiftUI
 #if DEBUG
     func explorationDebugSnapshot() -> [String: Any] { coordinator.explorationDebugSnapshot() }
     func performExplorationProbe(at point: CGPoint) { coordinator.performInspectCommand(at: point) }
+    func debugPinFooterProbe(near: CGPoint) -> String { coordinator.debugPinFooterProbe(near: near) }
 #endif
 
     func performActivationCommand() {
@@ -533,6 +534,22 @@ import SwiftUI
         let statusItemController = NuncidStatusItemController(state: state)
         self.statusItemController = statusItemController
 #if DEBUG
+        if CommandLine.arguments.contains("--pin-footer-probe") {
+            guard let screen = NuncidWindowPlacement.probeScreen else {
+                fputs("pin footer probe requires NUNCID_PROBE_DISPLAY_ID for the built-in display\n", stderr)
+                Darwin.exit(2)
+            }
+            let point = CGPoint(x: screen.visibleFrame.midX, y: screen.visibleFrame.midY)
+            let expected = (screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value
+            let report = state.debugPinFooterProbe(near: point)
+            print(report)
+            let landed = report.split(separator: " ").last.map(String.init)
+            guard let expected, landed == "id=\(expected)" else {
+                fputs("pin footer probe left the built-in display\n", stderr)
+                Darwin.exit(3)
+            }
+            Darwin.exit(0)
+        }
         if CommandLine.arguments.contains("--menu-update-header-probe") {
             print(statusItemController.debugMenuReport())
             Darwin.exit(0)
