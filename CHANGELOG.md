@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+## [260928194621.0.0] - 2026-09-28
+
+- Show the saved pin shortcut on a new exploration card.
+
 ## [260928165459.0.0] - 2026-09-28
 
 - Show the newer version beside the menu update status.
