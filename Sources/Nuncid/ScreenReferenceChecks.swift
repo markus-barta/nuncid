@@ -31,6 +31,36 @@ enum ScreenReferenceChecks {
         check(specs("NUNCID-70") == [.issue(tracker: .ppm, key: "NUNCID-70")], "explicit Paimos key")
         check(specs("START-42") == [.issue(tracker: .pma, key: "START-42")], "explicit PMA route")
         check(specs("https://pm.barta.cm/issues/CUSTOM-42") == [.issue(tracker: .ppm, key: "CUSTOM-42")], "explicit Paimos URL scope")
+        for (tracker, endpoints) in [(Tracker.ppm, ["https://aeon.barta.cm", "https://pm.barta.cm"]), (.pma, ["https://pm.augmentoring.com", "https://paimos.agm.ng"])] {
+            for endpoint in endpoints {
+                for path in ["/p/CUSTOM/CUSTOM-42", "/issues/CUSTOM-42", "/p/CUSTOM/CUSTOM-42/", "/issues/CUSTOM-42/"] {
+                    let references = classify(endpoint + path).filter(\.isVisibleCandidate)
+                    check(references.count == 1 && references.first?.lookupSpecs == [.issue(tracker: tracker, key: "CUSTOM-42")]
+                        && references.first?.hasExplicitInstance == true, "every primary and alias recognizes both routes: \(endpoint + path)")
+                }
+            }
+        }
+        for link in [
+            "https://unconfigured.example/p/NUNCID/NUNCID-111",
+            "https://unconfigured.example/issues/NUNCID-111",
+            "https://aeon.barta.cm.evil.example/p/NUNCID/NUNCID-111",
+            "https://aeon.barta.cm:8443/p/NUNCID/NUNCID-111",
+            "https://aeon.barta.cm/other/p/NUNCID/NUNCID-111",
+            "https://aeon.barta.cm/p/OTHER/NUNCID-111",
+            "https://aeon.barta.cm/p/NUNCID/NUNCID-111/extra",
+            "https://aeon.barta.cm/p/NUNCID/NUNCID-111//",
+            "https://aeon.barta.cm/p/NUNCID/NUNCID-111/%2Fextra",
+            "https://aeon.barta.cm/p/NUNCID/NUNCID-111%2Fextra",
+            "https://pm.barta.cm/issues/NUNCID-111/extra",
+            "https://evil.example/?next=https://aeon.barta.cm/p/NUNCID/NUNCID-111",
+            "https://evil.example/#https://pm.augmentoring.com/p/START/START-42",
+            "http://aeon.barta.cm/p/NUNCID/NUNCID-111",
+            "https://user:pass@aeon.barta.cm/p/NUNCID/NUNCID-111"
+        ] {
+            check(classify(link).flatMap(\.lookupSpecs).isEmpty, "unsupported or nested endpoint URL does not dispatch: \(link)")
+        }
+        let clippedAEON = OCRContextFragment(text: "https://aeon.barta.cm/p/NUNCID/NUNCID-111", lineIndex: 0, order: 0, endClipped: true)
+        check(ScreenReferenceClassifier.classify(.init(fragments: [clippedAEON])).flatMap(\.lookupSpecs).isEmpty, "clipped AEON link does not dispatch")
         check(specs("https://github.com/example/project/pull/42") == [.pullRequest(number: 42, repo: "example/project")], "PR URL")
         check(specs("https://github.com/example/project/actions/runs/34000001234") == [.workflowRun(id: 34000001234, repo: "example/project")], "run URL")
         check(specs("gh run view 34000001234 --repo example/project --json jobs --jq '.jobs[0]' --attempt 2") == [.workflowRun(id: 34000001234, repo: "example/project")], "run argv and non-ID flag values")

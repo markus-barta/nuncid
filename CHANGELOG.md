@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+## [261011185725.0.0] - 2026-10-11
+
+- Open tickets directly in AEON, keep several browser endpoints per tracker, and discover trackers concurrently (NUNCID-111).
+
 ## [260928194621.0.0] - 2026-09-28
 
 - Show the saved pin shortcut on a new exploration card.

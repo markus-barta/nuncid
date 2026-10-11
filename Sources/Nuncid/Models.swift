@@ -139,13 +139,15 @@ struct TicketLine: Codable, Hashable, Identifiable, Sendable {
     }
 
     var destinationURL: URL? {
-        if let destination, let url = URL(string: destination) { return url }
         switch source.lowercased() {
         case "gh":
+            if let destination, let url = URL(string: destination) { return url }
             let repo = metadata.split(separator: "·", maxSplits: 1).first?.trimmingCharacters(in: .whitespacesAndNewlines)
             guard let repo, !repo.isEmpty, key.hasPrefix("#") else { return nil }
             return URL(string: "https://github.com/\(repo)/pull/\(key.dropFirst())")
         default:
+            // Cached cards follow current Settings, including endpoint migration,
+            // primary changes, and deliberately unconfigured browser links.
             guard let connection = TrackerDirectory.shared.connections.first(where: { $0.id == source }),
                   let destination = connection.destination(key: key) else { return nil }
             return URL(string: destination)

@@ -965,6 +965,7 @@ struct SettingsView: View {
     @State private var trackerConnections = TrackerDirectory.shared.connections
     @State private var trackerName = ""
     @State private var trackerURL = ""
+    @State private var trackerEndpointDrafts: [String: String] = [:]
     @State private var trackerStatus = ""
     @State private var discoveringProjects = false
 
@@ -1067,27 +1068,20 @@ struct SettingsView: View {
             }
             SettingsCard {
                 ForEach(trackerConnections) { connection in
-                    HStack {
-                        VStack(alignment: .leading) {
-                            Text(connection.id).fontWeight(.semibold)
-                            Text(connection.webURL.isEmpty ? "Browser link not configured" : connection.webURL).font(.caption).foregroundStyle(.secondary)
-                        }
-                        Spacer()
-                        Button("Remove") {
-                            trackerConnections.removeAll { $0.id == connection.id }
-                            saveTrackers()
-                        }.disabled(discoveringProjects)
-                    }
+                    trackerConnectionRow(connection)
                     Divider()
                 }
                 TextField("Local paimos profile name", text: $trackerName)
                 TextField("Browser base URL (optional, https://…)", text: $trackerURL)
-                Text("The URL is used for opening tickets; the local paimos profile chooses the API server.").font(.caption).foregroundStyle(.secondary)
-                Button("Add or Update Instance") {
-                    guard let connection = TrackerConnection.validated(name: trackerName, webURL: trackerURL) else {
+                Text("The primary endpoint opens tickets. All endpoints recognize links on screen; the local paimos profile chooses the API server.").font(.caption).foregroundStyle(.secondary)
+                Button("Add Instance") {
+                    let endpoints = trackerURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? [] : [trackerURL]
+                    guard let connection = TrackerConnection.validated(name: trackerName, endpoints: endpoints) else {
                         trackerStatus = "Enter a valid profile name and an HTTPS URL without credentials, query or fragment."; return
                     }
-                    trackerConnections.removeAll { $0.id == connection.id }
+                    guard !trackerConnections.contains(where: { $0.id == connection.id }) else {
+                        trackerStatus = "This instance is already configured. Change its endpoints above."; return
+                    }
                     trackerConnections.append(connection)
                     trackerName = ""; trackerURL = ""
                     saveTrackers()
@@ -1100,6 +1094,55 @@ struct SettingsView: View {
                     .font(.callout).foregroundStyle(.secondary)
             }
         }
+    }
+
+    private func trackerConnectionRow(_ connection: TrackerConnection) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text(connection.id).fontWeight(.semibold)
+                Spacer()
+                Button("Remove Instance") {
+                    trackerConnections.removeAll { $0.id == connection.id }
+                    trackerEndpointDrafts.removeValue(forKey: connection.id)
+                    saveTrackers()
+                }
+            }
+            if connection.endpoints.isEmpty {
+                Text("Browser link not configured").font(.caption).foregroundStyle(.secondary)
+            }
+            ForEach(Array(connection.endpoints.enumerated()), id: \.offset) { index, endpoint in
+                HStack {
+                    Text(endpoint).font(.caption).textSelection(.enabled)
+                    Spacer()
+                    if index == 0 {
+                        Text("Primary").font(.caption).foregroundStyle(.secondary)
+                    } else {
+                        Button("Make Primary") { updateTracker(connection.makingPrimary(at: index)) }
+                    }
+                    Button("Remove Endpoint") { updateTracker(connection.removingEndpoint(at: index)) }
+                        .accessibilityLabel("Remove endpoint \(endpoint)")
+                }
+            }
+            HStack {
+                TextField("New HTTPS browser endpoint", text: Binding(
+                    get: { trackerEndpointDrafts[connection.id] ?? "" },
+                    set: { trackerEndpointDrafts[connection.id] = $0 }
+                ))
+                Button("Add Endpoint") {
+                    guard let updated = connection.addingEndpoint(trackerEndpointDrafts[connection.id] ?? "") else {
+                        trackerStatus = "Enter a new HTTPS URL without credentials, query or fragment."; return
+                    }
+                    trackerEndpointDrafts.removeValue(forKey: connection.id)
+                    updateTracker(updated)
+                }
+            }
+        }.disabled(discoveringProjects)
+    }
+
+    private func updateTracker(_ connection: TrackerConnection) {
+        guard let index = trackerConnections.firstIndex(where: { $0.id == connection.id }) else { return }
+        trackerConnections[index] = connection
+        saveTrackers()
     }
 
     private func saveTrackers() {

@@ -24,7 +24,11 @@ private actor ResolverConcurrencyProbe {
         active += 1; peak = max(peak, active)
         try? await Task.sleep(nanoseconds: 150_000_000)
         active -= 1
-        return spec.cacheKey.contains("999999") ? nil : TicketLine(key: spec.cacheKey, state: "open", title: "Test fixture", source: "ppm")
+        guard !spec.cacheKey.contains("999999") else { return nil }
+        if case let .issue(tracker, key) = spec {
+            return TicketLine(key: key, state: "open", title: "Test fixture", source: tracker.rawValue)
+        }
+        return TicketLine(key: spec.cacheKey, state: "open", title: "Test fixture", source: "gh")
     }
 }
 
@@ -135,6 +139,11 @@ private actor ResolverConcurrencyProbe {
     }
 
     private static func verifyResolverConcurrency() {
+        let originalConnections = TrackerDirectory.shared.connections
+        let originalProjects = TrackerDirectory.shared.projects
+        defer { TrackerDirectory.shared.replace(connections: originalConnections, projects: originalProjects, persist: false) }
+        TrackerDirectory.shared.replace(connections: TrackerConnection.defaults,
+                                        projects: [Tracker.ppm, .pma].map { ProjectDescriptor(key: "SHARED", name: "Shared project", aliases: [], tracker: $0) }, persist: false)
         let finished = DispatchSemaphore(value: 0)
         let result = SelfTestAsyncResult()
         Task.detached {
@@ -161,14 +170,28 @@ private actor ResolverConcurrencyProbe {
             _ = await resolver.resolve(miss)
             let counts = await probe.calls
             let peak = await probe.peak
+            let parallelProbe = ResolverConcurrencyProbe()
+            let parallelResolver = TicketResolver(lookupForTesting: { await parallelProbe.lookup($0) })
+            let specs = ScreenReferenceClassifier.classify(.init(lines: ["SHARED-111"])).flatMap(\.lookupSpecs)
+            let proposals = specs.enumerated().map { index, spec in
+                CandidateProposal(spec: spec, score: 100, reasons: [], sourceOrder: index,
+                                  inferredProject: "SHARED", learningEligibility: .explicit)
+            }
+            let resolved = await parallelResolver.resolve(ResolutionPlan(proposals: proposals))
+            let parallelCalls = await parallelProbe.calls
+            let parallelPeak = await parallelProbe.peak
             result.set(cancelled == nil && first != nil && counts[key.cacheKey] == 1
                 && counts["issue:ppm:NUNCID-64"] == 1 && counts["issue:ppm:NUNCID-66"] == 1
                 && cachedMissCalls == 1 && counts[miss.cacheKey] == 2
-                && peak <= ExplorationPreferences.load().parallelLookups)
+                && peak <= ExplorationPreferences.load().parallelLookups
+                && specs == [.issue(tracker: .ppm, key: "SHARED-111"), .issue(tracker: .pma, key: "SHARED-111")]
+                && resolved.map { $0.proposal.spec } == specs
+                && parallelCalls["issue:ppm:SHARED-111"] == 1 && parallelCalls["issue:pma:SHARED-111"] == 1
+                && parallelPeak == min(2, ExplorationPreferences.load().parallelLookups))
             finished.signal()
         }
         guard finished.wait(timeout: .now() + 5) == .success, result.get() else {
-            fputs("self-test failed: real resolver dedup, global limit, waiter cancellation and explicit miss retry\n", stderr); exit(1)
+            fputs("self-test failed: real resolver dedup, global limit, cancellation, miss retry and concurrent instance fanout\n", stderr); exit(1)
         }
     }
 
@@ -506,6 +529,20 @@ private actor ResolverConcurrencyProbe {
         catch { fputs("self-test failed: identity migration: \(error)\n", stderr); exit(1) }
         verifyMarkerAppearance()
         verifyResolverConcurrency()
+        // A process-wide CLI override also affects isolated preference suites.
+        // Exercise a one-slot budget only during the resolver check, then restore it.
+        do {
+            let defaults = UserDefaults.standard
+            let original = defaults.volatileDomain(forName: UserDefaults.argumentDomain)
+            var limited = original
+            limited["exploration.parallelLookups"] = 1
+            defaults.setVolatileDomain(limited, forName: UserDefaults.argumentDomain)
+            defer { defaults.setVolatileDomain(original, forName: UserDefaults.argumentDomain) }
+            guard ExplorationPreferences.load().parallelLookups == 1 else {
+                fputs("self-test failed: isolated one-slot resolver preference\n", stderr); exit(1)
+            }
+            verifyResolverConcurrency()
+        }
         let inspectionFailures = InspectionChecks.run()
         guard inspectionFailures.isEmpty else {
             fputs("self-test failed: inspection: \(inspectionFailures.joined(separator: "; "))\n", stderr); exit(1)
@@ -1386,7 +1423,7 @@ private actor ResolverConcurrencyProbe {
         }
         let ppmDestination = TicketLine(key: "NUNCID-35", state: "done", title: "Link", source: "ppm").destinationURL
         let githubDestination = TicketLine(key: "#184", state: "open", title: "Link", source: "gh", metadata: "markus-barta/nuncid · pull request").destinationURL
-        guard ppmDestination?.absoluteString == "https://pm.barta.cm/issues/NUNCID-35",
+        guard ppmDestination?.absoluteString == "https://aeon.barta.cm/p/NUNCID/NUNCID-35",
               githubDestination?.absoluteString == "https://github.com/markus-barta/nuncid/pull/184" else {
             fputs("self-test failed: source destination links\n", stderr); exit(1)
         }

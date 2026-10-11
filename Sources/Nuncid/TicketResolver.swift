@@ -204,8 +204,12 @@ actor TicketResolver {
 
     private func resolveIssue(tracker: Tracker, key: String) async -> TicketLine? {
         guard TrackerDirectory.shared.connections.contains(where: { $0.tracker == tracker }),
-              let data = await Self.readPaimos(tracker, ["issue", "get", key]),
-              let issue = try? JSONDecoder().decode(PaimosIssue.self, from: data),
+              let data = await Self.readPaimos(tracker, ["issue", "get", key]) else { return nil }
+        return Self.issueLine(data: data, tracker: tracker, key: key)
+    }
+
+    static func issueLine(data: Data, tracker: Tracker, key: String) -> TicketLine? {
+        guard let issue = try? JSONDecoder().decode(PaimosIssue.self, from: data),
               Self.matchesIssueKey(requested: key, returned: issue.issueKey) else { return nil }
         let metadata = [
             issue.type?.replacingOccurrences(of: "_", with: " "),
