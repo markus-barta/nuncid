@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Open tickets directly in AEON, manage primary and alias browser endpoints in Trackers, and discover instances concurrently (NUNCID-111)
+
 ## [260928194621.0.0] - 2026-09-28
 
 - Show the saved pin shortcut on a new exploration card.

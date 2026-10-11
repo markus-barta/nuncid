@@ -174,11 +174,17 @@ enum TrackerDirectoryChecks {
 private actor DirectoryReadFixture {
     var calls: [Tracker: Int] = [:]
     var fails = false
+    var active = 0
+    var peak = 0
+    var failingTrackers = Set<Tracker>()
     func setFailure() { fails = true }
+    func setFailure(for tracker: Tracker) { failingTrackers.insert(tracker) }
     func read(_ tracker: Tracker) async -> Data? {
         calls[tracker, default: 0] += 1
+        active += 1; peak = max(peak, active)
+        defer { active -= 1 }
         try? await Task.sleep(nanoseconds: 80_000_000)
-        return fails ? nil : Data(#"[{"id":1,"key":"HNET","name":"Home network","status":"active"},{"key":"NONAME","name":null}]"#.utf8)
+        return fails || failingTrackers.contains(tracker) ? nil : Data(#"[{"id":1,"key":"HNET","name":"Home network","status":"active"},{"key":"NONAME","name":null}]"#.utf8)
     }
 }
 
@@ -219,6 +225,19 @@ enum TrackerDiscoveryChecks {
         _ = await oldRefresh.value
         if directory.connections != [replacement] || directory.routes(for: "HNET") != [replacement.tracker] {
             failures.append("settings changes queue a refresh without reviving removed instances")
+        }
+        let parallelConnections = TrackerConnection.defaults + [replacement]
+        let parallelDirectory = TrackerDirectory(connections: parallelConnections, projects: [], persists: false)
+        let parallelReads = DirectoryReadFixture()
+        let parallel = TrackerDiscovery(directory: parallelDirectory, read: { await parallelReads.read($0) })
+        _ = await parallel.refresh(force: true)
+        if await parallelReads.peak != 3 || parallelDirectory.routes(for: "HNET") != parallelConnections.map(\.tracker) {
+            failures.append("all configured instances discover projects concurrently and retain every owner")
+        }
+        await parallelReads.setFailure(for: .pma)
+        let summary = await parallel.refresh(force: true)
+        if !summary.contains("Could not read: pma") || parallelDirectory.routes(for: "HNET") != parallelConnections.map(\.tracker) {
+            failures.append("concurrent partial failure preserves the failed instance's offline catalog")
         }
         return failures
     }

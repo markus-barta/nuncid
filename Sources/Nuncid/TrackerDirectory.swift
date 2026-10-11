@@ -243,9 +243,23 @@ actor TrackerDiscovery {
     private func performRefresh(connections: [TrackerConnection]) async -> String {
         var projects = directory.projects
         var failures: [String] = []
+        let read = self.read
+        let foundByTracker = await withTaskGroup(of: (Tracker, [ProjectDescriptor]?).self) { group in
+            for connection in connections {
+                group.addTask {
+                    let data = await read(connection.tracker)
+                    return (connection.tracker, data.flatMap { Self.decodeProjects($0, tracker: connection.tracker) })
+                }
+            }
+            var found: [Tracker: [ProjectDescriptor]] = [:]
+            for await (tracker, projects) in group {
+                if let projects { found[tracker] = projects }
+            }
+            return found
+        }
+        // Keep instance order stable, regardless of which concurrent read finishes first.
         for connection in connections {
-            guard let data = await read(connection.tracker),
-                  let found = Self.decodeProjects(data, tracker: connection.tracker) else {
+            guard let found = foundByTracker[connection.tracker] else {
                 failures.append(connection.id); continue
             }
             projects.removeAll { $0.tracker == connection.tracker }
