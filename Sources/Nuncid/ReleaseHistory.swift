@@ -22,6 +22,20 @@ struct ReleaseNote: Identifiable, Equatable {
 enum ReleaseHistory {
     static let notes: [ReleaseNote] = [
         ReleaseNote(
+            version: "261011185725.0.0",
+            isoDate: "2026-10-11",
+            date: "11 October 2026",
+            theme: "Tickets open in AEON",
+            headline: "Ticket links open straight in AEON.",
+            intro: "Nuncid opens Paimos tickets at their AEON address, with no detour through the retired classic site.",
+            items: [
+                ReleaseNoteItem(label: "Your links, your setting", detail: "Each tracker in Settings keeps a list of browser addresses. The first one opens tickets."),
+                ReleaseNoteItem(label: "Old links still work", detail: "Links on screen to the old pm.barta.cm and paimos.agm.ng addresses are still recognised."),
+                ReleaseNoteItem(label: "Faster discovery", detail: "Projects load from all your trackers at the same time.")
+            ],
+            versionScheme: .calendarV2
+        ),
+        ReleaseNote(
             version: "260928194621.0.0",
             isoDate: "2026-09-28",
             date: "28 September 2026",
