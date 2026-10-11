@@ -2,28 +2,95 @@ import Foundation
 
 struct TrackerConnection: Codable, Equatable, Identifiable, Sendable {
     let tracker: Tracker
-    /// Optional browser destination. Authentication and API routing belong to paimos.
-    let webURL: String
+    /// The first endpoint opens tickets; all endpoints recognize browser links.
+    /// Authentication and API routing belong to the local paimos profile.
+    let endpoints: [String]
     var id: String { tracker.rawValue }
 
     static let defaults: [TrackerConnection] = [
-        .init(tracker: .ppm, webURL: "https://pm.barta.cm"),
-        .init(tracker: .pma, webURL: "https://paimos.agm.ng")
+        .init(tracker: .ppm, endpoints: ["https://aeon.barta.cm", "https://pm.barta.cm"]),
+        .init(tracker: .pma, endpoints: ["https://pm.augmentoring.com", "https://paimos.agm.ng"])
     ]
 
-    static func validated(name: String, webURL: String) -> TrackerConnection? {
+    private static let legacyDefaults: [Tracker: String] = [
+        .ppm: "https://pm.barta.cm", .pma: "https://paimos.agm.ng"
+    ]
+
+    private enum CodingKeys: String, CodingKey { case tracker, endpoints, webURL }
+
+    init(tracker: Tracker, endpoints: [String]) {
+        self.tracker = tracker
+        self.endpoints = endpoints
+    }
+
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        tracker = try values.decode(Tracker.self, forKey: .tracker)
+        if values.contains(.endpoints) {
+            endpoints = try values.decode([String].self, forKey: .endpoints)
+        } else {
+            let legacyURL = try values.decode(String.self, forKey: .webURL)
+            endpoints = legacyURL.isEmpty ? [] : [legacyURL]
+        }
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var values = encoder.container(keyedBy: CodingKeys.self)
+        try values.encode(tracker, forKey: .tracker)
+        try values.encode(endpoints, forKey: .endpoints)
+    }
+
+    /// Exact old defaults only. Custom URLs and intentionally empty lists survive.
+    func migratingLegacyDefault() -> Self {
+        guard let legacy = Self.legacyDefaults[tracker], endpoints == [legacy] else { return self }
+        return Self.defaults.first { $0.tracker == tracker } ?? self
+    }
+
+    static func validated(name: String, endpoints: [String]) -> TrackerConnection? {
         guard let tracker = Tracker(rawValue: name.trimmingCharacters(in: .whitespacesAndNewlines)),
               tracker.rawValue.lowercased() != "gh" else { return nil }
-        let value = webURL.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !value.isEmpty {
-            guard let url = URLComponents(string: value), url.scheme == "https", url.host?.isEmpty == false,
-                  url.user == nil, url.password == nil, url.query == nil, url.fragment == nil else { return nil }
-        }
-        return .init(tracker: tracker, webURL: value.hasSuffix("/") ? String(value.dropLast()) : value)
+        let validated = endpoints.compactMap(validatedEndpoint)
+        guard validated.count == endpoints.count else { return nil }
+        return .init(tracker: tracker, endpoints: validated)
+    }
+
+    private static func validatedEndpoint(_ endpoint: String) -> String? {
+        let value = endpoint.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let url = URLComponents(string: value), url.scheme == "https", url.host?.isEmpty == false,
+              url.user == nil, url.password == nil, url.query == nil, url.fragment == nil, url.url != nil else { return nil }
+        return value.hasSuffix("/") ? String(value.dropLast()) : value
+    }
+
+    func addingEndpoint(_ endpoint: String) -> Self? {
+        guard let value = Self.validatedEndpoint(endpoint), !endpoints.contains(value) else { return nil }
+        return .init(tracker: tracker, endpoints: endpoints + [value])
+    }
+
+    func removingEndpoint(at index: Int) -> Self {
+        guard endpoints.indices.contains(index) else { return self }
+        var updated = endpoints
+        updated.remove(at: index)
+        return .init(tracker: tracker, endpoints: updated)
+    }
+
+    func makingPrimary(at index: Int) -> Self {
+        guard endpoints.indices.contains(index) else { return self }
+        var updated = endpoints
+        updated.insert(updated.remove(at: index), at: 0)
+        return .init(tracker: tracker, endpoints: updated)
     }
 
     func destination(key: String) -> String? {
-        webURL.isEmpty ? nil : "\(webURL)/issues/\(key)"
+        let parts = key.split(separator: "-", maxSplits: 1, omittingEmptySubsequences: false)
+        let segmentCharacters = CharacterSet(charactersIn: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~")
+        guard let endpoint = endpoints.first, Self.validatedEndpoint(endpoint) != nil,
+              parts.count == 2, !parts[0].isEmpty, !parts[1].isEmpty,
+              let project = String(parts[0]).addingPercentEncoding(withAllowedCharacters: segmentCharacters),
+              let issue = key.addingPercentEncoding(withAllowedCharacters: segmentCharacters),
+              var url = URLComponents(string: endpoint) else { return nil }
+        while url.percentEncodedPath.hasSuffix("/") { url.percentEncodedPath.removeLast() }
+        url.percentEncodedPath += "/p/\(project)/\(issue)"
+        return url.url?.absoluteString
     }
 }
 
@@ -35,13 +102,37 @@ final class TrackerDirectory: @unchecked Sendable {
     private var storedConnections: [TrackerConnection]
     private var storedProjects: [ProjectDescriptor]
     private let persists: Bool
+    private let defaults: UserDefaults
+    private static let connectionsKey = "trackerConnectionsV2"
+    private static let migrationKey = "trackerEndpointsMigratedV1"
 
-    init(connections: [TrackerConnection]? = nil, projects: [ProjectDescriptor]? = nil, persists: Bool = true) {
+    init(connections: [TrackerConnection]? = nil, projects: [ProjectDescriptor]? = nil, persists: Bool = true,
+         defaults: UserDefaults = .standard) {
         self.persists = persists
-        storedConnections = connections ?? UserDefaults.standard.data(forKey: "trackerConnectionsV1")
-            .flatMap { try? JSONDecoder().decode([TrackerConnection].self, from: $0) } ?? TrackerConnection.defaults
-        storedProjects = projects ?? UserDefaults.standard.data(forKey: "trackerProjectsV1")
+        self.defaults = defaults
+        storedConnections = connections ?? Self.loadConnections(defaults: defaults, persist: persists)
+        storedProjects = projects ?? defaults.data(forKey: "trackerProjectsV1")
             .flatMap { try? JSONDecoder().decode([ProjectDescriptor].self, from: $0) } ?? []
+    }
+
+    private static func loadConnections(defaults: UserDefaults, persist: Bool) -> [TrackerConnection] {
+        if let saved = defaults.data(forKey: connectionsKey) {
+            // Keep undecodable data intact and disable routing rather than activate defaults.
+            return (try? JSONDecoder().decode([TrackerConnection].self, from: saved)) ?? []
+        }
+        let connections: [TrackerConnection]
+        if let legacy = defaults.data(forKey: "trackerConnectionsV1") {
+            guard let decoded = try? JSONDecoder().decode([TrackerConnection].self, from: legacy) else { return [] }
+            connections = defaults.bool(forKey: migrationKey) ? decoded : decoded.map { $0.migratingLegacyDefault() }
+        } else {
+            connections = TrackerConnection.defaults
+        }
+        if persist, let saved = try? JSONEncoder().encode(connections) {
+            // Leave V1 untouched as a rollback copy; subsequent launches prefer V2.
+            defaults.set(saved, forKey: connectionsKey)
+            defaults.set(true, forKey: migrationKey)
+        }
+        return connections
     }
 
     var connections: [TrackerConnection] { lock.lock(); defer { lock.unlock() }; return storedConnections }
@@ -55,8 +146,8 @@ final class TrackerDirectory: @unchecked Sendable {
         lock.lock(); defer { lock.unlock() }
         storedConnections = connections; storedProjects = projects
         if persist && persists {
-            UserDefaults.standard.set(try? JSONEncoder().encode(connections), forKey: "trackerConnectionsV1")
-            UserDefaults.standard.set(try? JSONEncoder().encode(projects), forKey: "trackerProjectsV1")
+            defaults.set(try? JSONEncoder().encode(connections), forKey: Self.connectionsKey)
+            defaults.set(try? JSONEncoder().encode(projects), forKey: "trackerProjectsV1")
         }
     }
 
@@ -74,7 +165,7 @@ final class TrackerDirectory: @unchecked Sendable {
         lock.lock(); defer { lock.unlock() }
         guard storedConnections == connections else { return false }
         storedProjects = projects
-        if persists { UserDefaults.standard.set(try? JSONEncoder().encode(projects), forKey: "trackerProjectsV1") }
+        if persists { defaults.set(try? JSONEncoder().encode(projects), forKey: "trackerProjectsV1") }
         return true
     }
 
@@ -84,11 +175,15 @@ final class TrackerDirectory: @unchecked Sendable {
 
     func tracker(forBaseURL base: String) -> Tracker? {
         guard let target = URLComponents(string: base), target.scheme?.lowercased() == "https",
-              target.user == nil, target.password == nil, target.query == nil, target.fragment == nil else { return nil }
-        let matches = connections.filter {
-            guard let url = URLComponents(string: $0.webURL) else { return false }
-            return url.host?.lowercased() == target.host?.lowercased() && (url.port ?? 443) == (target.port ?? 443)
-                && url.path.trimmingCharacters(in: CharacterSet(charactersIn: "/")) == target.path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+              target.host?.isEmpty == false, target.user == nil, target.password == nil,
+              target.query == nil, target.fragment == nil else { return nil }
+        let matches = connections.filter { connection in
+            connection.endpoints.contains { endpoint in
+                guard let url = URLComponents(string: endpoint), url.scheme == "https",
+                      url.user == nil, url.password == nil, url.query == nil, url.fragment == nil else { return false }
+                return url.host?.lowercased() == target.host?.lowercased() && (url.port ?? 443) == (target.port ?? 443)
+                    && url.path.trimmingCharacters(in: CharacterSet(charactersIn: "/")) == target.path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+            }
         }
         return matches.count == 1 ? matches[0].tracker : nil
     }

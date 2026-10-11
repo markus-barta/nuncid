@@ -61,7 +61,7 @@ enum ScreenReferenceClassifier {
         return compiled
     }
     private static let url = regex(#"(?i)https?://github\.com/([a-z0-9-]+/[a-z0-9_.-]+)/(pull|actions/runs)/([0-9]+)(?![\w.-])"#)
-    private static let issueURL = regex(#"(?i)(https?://[^\s?#]+?)/issues/([a-z][a-z0-9]{1,11})-([0-9]+)(?![\w.-])"#)
+    private static let issueURL = regex(#"(?i)(https?://[^\s?#]+?)/(?:issues|p/([a-z][a-z0-9]{1,11}))/([a-z][a-z0-9]{1,11})-([0-9]+)(?:/)?(?![\w./%-])"#)
     private static let label = regex(#"(?i)(?<![\w-])(?:release-)?(PR|pull[ -]+request|ticket|issue)\s*(?:number\s*|no\.?\s*|[:#]\s*)?([0-9]+)(?![\w]|\.[0-9])"#)
     private static let words = regex(#"'[^']*'|"[^"]*"|[;&|\n]|[^\s;&|]+"#)
     private static let inheritedLabel = regex(#"(?i)(?:\bgh\s+pr\s+(?:view|checks|diff|merge)|\bgh\s+run\s+view|\bPR|\bpull[ -]+request|\bticket|\bissue)\s*[:#]?\s*$"#)
@@ -198,9 +198,11 @@ enum ScreenReferenceClassifier {
 
             for match in issueURL.matches(in: text, range: fullRange(text)) {
                 guard complete(match.range), isWholeURLStart(match.range, in: text), let tracker = TrackerDirectory.shared.tracker(forBaseURL: ns.substring(with: match.range(at: 1))),
-                      let number = Int(ns.substring(with: match.range(at: 3))), number > 0 else { continue }
-                let project = ns.substring(with: match.range(at: 2)).uppercased()
-                let range = NSRange(location: match.range(at: 2).location, length: NSMaxRange(match.range(at: 3)) - match.range(at: 2).location)
+                      let number = Int(ns.substring(with: match.range(at: 4))), number > 0 else { continue }
+                let project = ns.substring(with: match.range(at: 3)).uppercased()
+                if match.range(at: 2).location != NSNotFound,
+                   ns.substring(with: match.range(at: 2)).uppercased() != project { continue }
+                let range = NSRange(location: match.range(at: 3).location, length: NSMaxRange(match.range(at: 4)) - match.range(at: 3).location)
                 append(range, kind: .issueKey(project: project, number: number), category: .issue,
                        decision: .lookup(.issue(tracker: tracker, key: "\(project)-\(number)")), reason: "Explicit Paimos issue URL", hasExplicitInstance: true)
             }

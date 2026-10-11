@@ -1386,7 +1386,7 @@ private actor ResolverConcurrencyProbe {
         }
         let ppmDestination = TicketLine(key: "NUNCID-35", state: "done", title: "Link", source: "ppm").destinationURL
         let githubDestination = TicketLine(key: "#184", state: "open", title: "Link", source: "gh", metadata: "markus-barta/nuncid · pull request").destinationURL
-        guard ppmDestination?.absoluteString == "https://pm.barta.cm/issues/NUNCID-35",
+        guard ppmDestination?.absoluteString == "https://aeon.barta.cm/p/NUNCID/NUNCID-35",
               githubDestination?.absoluteString == "https://github.com/markus-barta/nuncid/pull/184" else {
             fputs("self-test failed: source destination links\n", stderr); exit(1)
         }
